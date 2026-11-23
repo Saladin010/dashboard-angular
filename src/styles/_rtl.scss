@@ -1,0 +1,45 @@
+[dir='rtl'] {
+  body {
+    font-family: var(--font-arabic, 'Cairo', sans-serif);
+    direction: rtl;
+    text-align: right;
+  }
+
+  .sidebar {
+    border-left: 1px solid var(--border-color, #1e293b);
+    border-right: none;
+  }
+
+  .nav-item-icon {
+    margin-left: 0.75rem;
+    margin-right: 0;
+  }
+
+  .badge-dot {
+    margin-left: 0.5rem;
+    margin-right: 0;
+  }
+}
+
+[dir='ltr'] {
+  body {
+    font-family: var(--font-english, 'Inter', sans-serif);
+    direction: ltr;
+    text-align: left;
+  }
+
+  .sidebar {
+    border-right: 1px solid var(--border-color, #1e293b);
+    border-left: none;
+  }
+
+  .nav-item-icon {
+    margin-right: 0.75rem;
+    margin-left: 0;
+  }
+
+  .badge-dot {
+    margin-right: 0.5rem;
+    margin-left: 0;
+  }
+}

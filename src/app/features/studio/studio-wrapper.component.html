@@ -1,0 +1,294 @@
+<div class="studio-container" dir="rtl">
+  <!-- Top Navigation / Header -->
+  <header class="studio-header card">
+    <div class="header-main">
+      <div class="title-group">
+        <h1 class="property-title">
+          {{ scanPreview()?.propertyTitle || 'محرر المشاهد ثلاثية الأبعاد (SuperSplat Studio)' }}
+        </h1>
+        <div class="header-badges">
+          <span class="badge badge-info">المسح: {{ scanId() || 'غير محدد' }}</span>
+          <span class="badge badge-success">الإصدار: v{{ expectedVersion() }}</span>
+          @if (scanPreview()?.status) {
+            <span class="badge badge-warning">{{ scanPreview()?.status }}</span>
+          }
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <a routerLink="/scans" class="btn btn-secondary">
+          <span>&larr; العودة للمسوحات</span>
+        </a>
+        <button 
+          type="button"
+          class="btn btn-primary"
+          [disabled]="saving() || loading()"
+          (click)="saveSceneConfig()">
+          @if (saving()) {
+            <span>جاري الحفظ...</span>
+          } @else {
+            <span>💾 حفظ إعدادات المشهد</span>
+          }
+        </button>
+      </div>
+    </div>
+
+    <!-- Conflict Warning Banner (Optimistic Concurrency 409) -->
+    @if (conflictError()) {
+      <div class="conflict-alert" role="alert">
+        <div class="conflict-content">
+          <span class="alert-icon">⚠️</span>
+          <div class="alert-text">
+            <strong>تعارض في الحفظ (409 Conflict):</strong>
+            <p>{{ conflictError() }}</p>
+          </div>
+        </div>
+        <button type="button" class="btn btn-warning" (click)="reloadLatestVersion()">
+          🔄 إعادة تحميل أحدث نسخة
+        </button>
+      </div>
+    }
+
+    <!-- Toast Notifications -->
+    @if (saveSuccess()) {
+      <div class="toast-success">
+        ✓ تم حفظ إعدادات المشهد بنجاح (الإصدار v{{ expectedVersion() }})
+      </div>
+    }
+
+    @if (spawnSavedToast()) {
+      <div class="toast-info">
+        ✓ تم تعيين موضع البداية الحالي للغرفة بنجاح!
+      </div>
+    }
+
+    @if (error()) {
+      <div class="toast-error">
+        ✕ {{ error() }}
+      </div>
+    }
+  </header>
+
+  <!-- Main Split Layout -->
+  <div class="studio-body">
+    <!-- 3D Viewport Iframe Container -->
+    <main class="viewport-pane card">
+      @if (loading()) {
+        <div class="viewport-loader">
+          <div class="spinner"></div>
+          <p>جاري تحميل بيانات المسح والمعاينة ثلاثية الأبعاد...</p>
+        </div>
+      }
+
+      <iframe 
+        #editorFrame 
+        [src]="editorSafeUrl()" 
+        class="editor-iframe"
+        title="SuperSplat Studio 3D Editor"
+        allow="fullscreen; xr-spatial-tracking"
+        (load)="onIframeLoaded()">
+      </iframe>
+
+      @if (isPlacingHotspot()) {
+        <div class="placement-banner">
+          <span class="pulse-indicator"></span>
+          <span>وضع إضافة نقطة الانتقال نشط: انقر داخل المشهد 3D لوضع النقطة</span>
+          <button type="button" class="btn btn-sm btn-secondary" (click)="cancelHotspotPlacement()">إلغاء</button>
+        </div>
+      }
+    </main>
+
+    <!-- Arabic RTL Studio Sidebar -->
+    <aside class="sidebar-pane card">
+      <!-- Section 1: Room Switcher Pills -->
+      <section class="sidebar-section">
+        <h3 class="section-title">الغرف والمساحات (Rooms)</h3>
+        <p class="section-desc">اختر الغرفة للتنقل بين نماذج .sog وضبط إعداداتها:</p>
+        <div class="room-pills">
+          @for (room of scanPreview()?.rooms; track room.roomId) {
+            <button 
+              type="button" 
+              class="room-pill"
+              [class.active]="activeRoomId() === room.roomId"
+              (click)="selectRoom(room.roomId)">
+              <span class="room-pill-name">{{ room.roomName }}</span>
+              <span class="status-indicator" [class.ready]="!!room.signedModelUrl"></span>
+            </button>
+          } @empty {
+            <div class="empty-state">لا توجد غرف متاحة لهذا المسح</div>
+          }
+        </div>
+      </section>
+
+      <!-- Section 2: 6-DOF Crop Box Sliders -->
+      <section class="sidebar-section">
+        <div class="section-header-row">
+          <h3 class="section-title">صندوق الاقتصاص 6-DOF (Crop Box)</h3>
+          <span class="badge badge-info">حدود الغرفة</span>
+        </div>
+        <p class="section-desc">حدد الحدود المكانية المحيطة بالنموذج لاستبعاد النقاط الزائدة:</p>
+
+        <div class="sliders-grid">
+          <div class="slider-group">
+            <div class="slider-label">
+              <span>X الأدنى:</span>
+              <span class="slider-val">{{ cropMinX() }}m</span>
+            </div>
+            <input type="range" min="-20" max="0" step="0.1" [ngModel]="cropMinX()" (ngModelChange)="cropMinX.set($event); onCropBoxChange()" class="range-input" />
+          </div>
+
+          <div class="slider-group">
+            <div class="slider-label">
+              <span>X الأقصى:</span>
+              <span class="slider-val">{{ cropMaxX() }}m</span>
+            </div>
+            <input type="range" min="0" max="20" step="0.1" [ngModel]="cropMaxX()" (ngModelChange)="cropMaxX.set($event); onCropBoxChange()" class="range-input" />
+          </div>
+
+          <div class="slider-group">
+            <div class="slider-label">
+              <span>Y الأدنى (الأرضية):</span>
+              <span class="slider-val">{{ cropMinY() }}m</span>
+            </div>
+            <input type="range" min="-10" max="0" step="0.1" [ngModel]="cropMinY()" (ngModelChange)="cropMinY.set($event); onCropBoxChange()" class="range-input" />
+          </div>
+
+          <div class="slider-group">
+            <div class="slider-label">
+              <span>Y الأقصى (السقف):</span>
+              <span class="slider-val">{{ cropMaxY() }}m</span>
+            </div>
+            <input type="range" min="0" max="10" step="0.1" [ngModel]="cropMaxY()" (ngModelChange)="cropMaxY.set($event); onCropBoxChange()" class="range-input" />
+          </div>
+
+          <div class="slider-group">
+            <div class="slider-label">
+              <span>Z الأدنى:</span>
+              <span class="slider-val">{{ cropMinZ() }}m</span>
+            </div>
+            <input type="range" min="-20" max="0" step="0.1" [ngModel]="cropMinZ()" (ngModelChange)="cropMinZ.set($event); onCropBoxChange()" class="range-input" />
+          </div>
+
+          <div class="slider-group">
+            <div class="slider-label">
+              <span>Z الأقصى:</span>
+              <span class="slider-val">{{ cropMaxZ() }}m</span>
+            </div>
+            <input type="range" min="0" max="20" step="0.1" [ngModel]="cropMaxZ()" (ngModelChange)="cropMaxZ.set($event); onCropBoxChange()" class="range-input" />
+          </div>
+        </div>
+      </section>
+
+      <!-- Section 3: Floor Tilt & Scale Calibration -->
+      <section class="sidebar-section">
+        <h3 class="section-title">ضبط استواء الأرضية والمقياس</h3>
+        
+        <div class="slider-group">
+          <div class="slider-label">
+            <span>ميل الأرضية (Floor Tilt):</span>
+            <span class="slider-val">{{ floorTilt() }}°</span>
+          </div>
+          <input type="range" min="-45" max="45" step="0.5" [ngModel]="floorTilt()" (ngModelChange)="floorTilt.set($event); onFloorTiltChange()" class="range-input" />
+        </div>
+
+        <div class="action-buttons-row">
+          <button type="button" class="btn btn-outline btn-sm" (click)="calibrateDoorScale()">
+            📏 معايرة المقياس للباب القياسي (2.1م)
+          </button>
+        </div>
+      </section>
+
+      <!-- Section 4: Eye-Level Spawn Pose -->
+      <section class="sidebar-section">
+        <div class="section-header-row">
+          <h3 class="section-title">نقطة البداية للكاميرا (Spawn Pose)</h3>
+          @if (spawnPose()) {
+            <span class="badge badge-success">محدد</span>
+          } @else {
+            <span class="badge badge-warning">افتراضي</span>
+          }
+        </div>
+        <p class="section-desc">حرك الكاميرا داخل المشهد لمستوى النظر المطلوب ثم اضغط الزر لحفظ الموضع:</p>
+        
+        <button 
+          type="button" 
+          class="btn btn-secondary w-full"
+          (click)="captureEyeLevelSpawn()">
+          👁️ تعيين موضع البداية الحالي
+        </button>
+
+        @if (spawnPose()) {
+          <div class="pose-details">
+            <span>الموضع: [{{ spawnPose()![0] | number:'1.2-2' }}, {{ spawnPose()![1] | number:'1.2-2' }}, {{ spawnPose()![2] | number:'1.2-2' }}]</span>
+          </div>
+        }
+      </section>
+
+      <!-- Section 5: Transition Hotspots -->
+      <section class="sidebar-section">
+        <h3 class="section-title">نقاط الانتقال بين الغرف (Hotspots)</h3>
+        <p class="section-desc">أضف بوابات تفاعلية تمكّن الزائر من الانتقال إلى غرفة أخرى بنقرة زر:</p>
+
+        @if (otherRooms().length > 0) {
+          <div class="add-hotspot-form">
+            <div class="form-group">
+              <label for="targetRoomSelect" class="input-label">الغرفة الهدف:</label>
+              <select 
+                id="targetRoomSelect"
+                class="input-control select-control" 
+                [ngModel]="hotspotTargetRoomId()" 
+                (ngModelChange)="hotspotTargetRoomId.set($event)">
+                @for (room of otherRooms(); track room.roomId) {
+                  <option [value]="room.roomId">{{ room.roomName }}</option>
+                }
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="hotspotTitleInput" class="input-label">عنوان النقطة:</label>
+              <input 
+                id="hotspotTitleInput"
+                type="text" 
+                class="input-control" 
+                placeholder="مثال: الذهاب إلى المطبخ" 
+                [ngModel]="hotspotTitle()" 
+                (ngModelChange)="hotspotTitle.set($event)" />
+            </div>
+
+            <button 
+              type="button" 
+              class="btn btn-outline w-full"
+              [class.active-pick]="isPlacingHotspot()"
+              (click)="isPlacingHotspot() ? cancelHotspotPlacement() : startHotspotPlacement()">
+              @if (isPlacingHotspot()) {
+                <span>❌ إلغاء تحديد النقطة</span>
+              } @else {
+                <span>+ إضافة نقطة انتقال</span>
+              }
+            </button>
+          </div>
+        } @else {
+          <div class="empty-state">لا توجد غرف إضافية للربط معها</div>
+        }
+
+        <!-- Hotspots list in current room -->
+        <div class="hotspots-list">
+          <h4 class="list-title">النقاط في الغرفة الحالية ({{ currentRoomHotspots().length }}):</h4>
+          @for (hs of currentRoomHotspots(); track hs.id) {
+            <div class="hotspot-item">
+              <div class="hotspot-info">
+                <strong>{{ hs.title }}</strong>
+                <span class="hotspot-coords">[{{ hs.position[0] | number:'1.1-1' }}, {{ hs.position[1] | number:'1.1-1' }}, {{ hs.position[2] | number:'1.1-1' }}]</span>
+              </div>
+              <button type="button" class="btn-delete" (click)="removeHotspot(hs.id)" title="حذف النقطة">
+                🗑️
+              </button>
+            </div>
+          } @empty {
+            <div class="empty-state-small">لم يتم وضع نقاط انتقال في هذه الغرفة بعد</div>
+          }
+        </div>
+      </section>
+    </aside>
+  </div>
+</div>

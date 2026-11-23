@@ -1,0 +1,69 @@
+{
+  "app": {
+    "title": "RealEstate 3D Platform",
+    "subtitle": "Apartment CRM & 3D Walkthrough Management",
+    "dashboard": "Dashboard",
+    "properties": "Properties",
+    "scans": "3D Scans Monitor",
+    "users": "Team Users",
+    "logout": "Sign Out",
+    "arabic": "العربية",
+    "english": "English",
+    "admin": "Administrator",
+    "agent": "Real Estate Agent"
+  },
+  "auth": {
+    "loginTitle": "Sign In to Platform",
+    "loginSubtitle": "Enter your email and password to continue",
+    "email": "Email Address",
+    "password": "Password",
+    "submit": "Sign In",
+    "signingIn": "Authenticating...",
+    "deactivatedAlert": "This account has been deactivated by administrator. Please contact your manager.",
+    "invalidCredentials": "Invalid email or password"
+  },
+  "properties": {
+    "title": "Properties Management",
+    "search": "Search title or district...",
+    "allDistricts": "All Districts",
+    "allStatuses": "All Statuses",
+    "allTypes": "All Types",
+    "sale": "For Sale",
+    "rent": "For Rent",
+    "addProperty": "New Property",
+    "price": "Price",
+    "area": "Area",
+    "rooms": "Rooms",
+    "baths": "Baths",
+    "floor": "Floor",
+    "finishing": "Finishing",
+    "status": "Status",
+    "actions": "Actions",
+    "noProperties": "No properties found matching criteria",
+    "shareLink": "Share",
+    "view3D": "3D Tour",
+    "owner": "Owner"
+  },
+  "scans": {
+    "title": "3D Scan Jobs Monitor",
+    "captureMode": "Capture Mode",
+    "status": "Job Status",
+    "roomsProgress": "Rooms Progress",
+    "dispatchToken": "Generate Kaggle Token",
+    "retryRooms": "Retry Failed Rooms",
+    "rawClipsExpiredNotice": "Cannot retry: Raw video clips have expired (30-day retention)",
+    "studio": "3D Studio",
+    "published": "Published",
+    "processing": "Processing"
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "edit": "Edit",
+    "delete": "Delete",
+    "confirm": "Confirm",
+    "loading": "Loading...",
+    "error": "An unexpected error occurred",
+    "success": "Operation completed successfully"
+  }
+}
