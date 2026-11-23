@@ -1215,7 +1215,7 @@ export class ScanJobsMonitorComponent implements OnInit, OnDestroy {
     if (link.shareUrl && link.shareUrl.startsWith('http')) {
       return link.shareUrl;
     }
-    const viewerUrl = API_CONFIG.viewerBaseUrl || 'http://localhost:3000';
+    const viewerUrl = API_CONFIG.viewerBaseUrl || 'https://viewer-web.pages.dev';
     return `${viewerUrl}/tour/${link.token}`;
   }
 
