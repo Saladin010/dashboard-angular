@@ -1,6 +1,7 @@
 export const API_CONFIG = {
-  baseUrl: 'http://localhost:5000/api/v1',
-  viewerBaseUrl: 'http://localhost:3000',
+  baseUrl: 'https://orcaz.runasp.net/api/v1',
+  viewerBaseUrl: 'https://viewer-web.pages.dev',
+  studioBaseUrl: 'https://studio-editor-dmx.pages.dev',
   endpoints: {
     auth: {
       login: '/auth/login',

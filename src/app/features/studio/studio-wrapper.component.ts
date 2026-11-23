@@ -80,7 +80,7 @@ export class StudioWrapperComponent implements OnInit, OnDestroy {
 
   // Editor safe URL
   readonly editorSafeUrl = computed<SafeResourceUrl>(() => {
-    const base = API_CONFIG.viewerBaseUrl || 'http://localhost:3000';
+    const base = API_CONFIG.studioBaseUrl || API_CONFIG.viewerBaseUrl || 'https://studio-editor-dmx.pages.dev';
     return this.sanitizer.bypassSecurityTrustResourceUrl(base);
   });
 
