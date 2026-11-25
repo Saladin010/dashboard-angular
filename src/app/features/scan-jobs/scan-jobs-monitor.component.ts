@@ -23,6 +23,9 @@ import { extractApiErrorMessage } from '../../core/utils/api-error.util';
 interface RoomParsedMetrics {
   camerasRegisteredPct?: number;
   sogModelSizeMb?: number;
+  glbSizeMb?: number;
+  modelFormat?: 'glb' | 'sog';
+  triangles?: number;
   processingTimeSec?: number;
   psnr?: number;
   ssim?: number;
@@ -42,7 +45,7 @@ interface RoomParsedMetrics {
             <span>{{ i18n.isRtl() ? 'مراقبة طابور المعالجة 3D' : '3D Scan Processing Queue' }}</span>
           </div>
           <h1>{{ i18n.isRtl() ? 'مراقبة وإدارة جلسات المسح ثلاثي الأبعاد' : '3D Scan Jobs Queue Monitor' }}</h1>
-          <p>{{ i18n.isRtl() ? 'تتبع مراحل تحويل الفيديو إلى 3D Gaussian Splats (.sog)، إدارة روابط المعاينة، وتوليد توكن تشغيل Kaggle GPU' : 'Track video-to-3D Gaussian Splats (.sog) pipeline, manage viewer links, and generate Kaggle GPU dispatch tokens' }}</p>
+          <p>{{ i18n.isRtl() ? 'تتبع مراحل تحويل الفيديو إلى مجسمات ثلاثية الأبعاد (.glb / Meshroom)، إدارة روابط المعاينة، وتوليد توكن تشغيل Colab T4 Worker' : 'Track video-to-3D (.glb Meshroom / .sog) reconstruction pipeline, manage viewer links, and generate Colab Worker tokens' }}</p>
         </div>
 
         <div class="header-actions">
@@ -198,17 +201,17 @@ interface RoomParsedMetrics {
 
             <!-- Action Buttons Toolbar -->
             <div class="overview-actions-toolbar">
-              <!-- Admin Only: Kaggle Dispatch Token Generator -->
+              <!-- Admin Only: Colab Worker Dispatch Token Generator -->
               @if (authService.isAdmin()) {
                 <button
                   type="button"
                   class="btn btn-warning-outline"
                   (click)="generateKaggleDispatchToken()"
                   [disabled]="isGeneratingToken()"
-                  title="Generate 12-hour Worker Token for Kaggle GPU execution"
+                  title="Generate 12-hour Worker Token for Colab Meshroom T4 execution"
                 >
                   <span class="btn-icon">⚡</span>
-                  <span>{{ isGeneratingToken() ? (i18n.isRtl() ? 'جاري التوليد...' : 'Generating...') : (i18n.isRtl() ? 'توليد توكن Kaggle' : 'Generate Kaggle Token') }}</span>
+                  <span>{{ isGeneratingToken() ? (i18n.isRtl() ? 'جاري التوليد...' : 'Generating...') : (i18n.isRtl() ? 'توكن معالج Colab' : 'Colab Worker Token') }}</span>
                 </button>
               }
 
@@ -260,9 +263,9 @@ interface RoomParsedMetrics {
             <div class="metric-box">
               <div class="metric-icon-circle">📦</div>
               <div class="metric-data">
-                <span class="metric-title">{{ i18n.isRtl() ? 'حجم مجسم .sog' : '.sog Model Size' }}</span>
-                <span class="metric-number">{{ aggregatedMetrics().sogModelSizeMb }} <small>MB</small></span>
-                <span class="metric-subtitle">{{ i18n.isRtl() ? 'الحجم المضغوط (المستهدف < 30 MB)' : 'Single compressed 3DGS file' }}</span>
+                <span class="metric-title">{{ i18n.isRtl() ? 'حجم المجسم 3D (.glb)' : '3D Model Size (.glb)' }}</span>
+                <span class="metric-number">{{ aggregatedMetrics().modelSizeMb }} <small>MB</small></span>
+                <span class="metric-subtitle">{{ i18n.isRtl() ? 'ملف Meshroom .glb (أو .sog)' : 'Textured .glb mesh (or .sog)' }}</span>
               </div>
             </div>
 
@@ -275,31 +278,31 @@ interface RoomParsedMetrics {
                   @if (scan()!.lastHeartbeatAt) {
                     {{ i18n.isRtl() ? 'آخر نبضة عامل:' : 'Last heartbeat:' }} {{ formatTimeOnly(scan()!.lastHeartbeatAt!) }}
                   } @else {
-                    {{ i18n.isRtl() ? 'إجمالي مدة حساب الـ Splats' : 'GPU Reconstruction duration' }}
+                    {{ i18n.isRtl() ? 'إجمالي مدة المعالجة على GPU' : 'GPU Reconstruction duration' }}
                   }
                 </span>
               </div>
             </div>
 
             <div class="metric-box">
-              <div class="metric-icon-circle">✨</div>
+              <div class="metric-icon-circle">🔺</div>
               <div class="metric-data">
-                <span class="metric-title">{{ i18n.isRtl() ? 'عدد نقاط الـ Gaussians' : 'Gaussian Splats Count' }}</span>
-                <span class="metric-number">{{ aggregatedMetrics().gaussianCount }}</span>
-                <span class="metric-subtitle">{{ i18n.isRtl() ? 'إجمالي النقاط ثلاثية الأبعاد' : 'Total 3D primitives rendered' }}</span>
+                <span class="metric-title">{{ i18n.isRtl() ? 'عدد المثلثات (Triangles)' : 'Mesh Triangles / Primitives' }}</span>
+                <span class="metric-number">{{ aggregatedMetrics().triangleCount }}</span>
+                <span class="metric-subtitle">{{ i18n.isRtl() ? 'إجمالي المضلعات / النقاط ثلاثية الأبعاد' : 'Total 3D triangles rendered' }}</span>
               </div>
             </div>
           </div>
         </div>
 
-        <!-- Admin Kaggle Dispatch Token Modal -->
+        <!-- Admin Colab Meshroom Worker Dispatch Token Modal -->
         @if (showTokenModal() && dispatchTokenData()) {
           <div class="modal-backdrop" (click)="showTokenModal.set(false)">
             <div class="modal-card" (click)="$event.stopPropagation()">
               <div class="modal-header">
                 <div class="header-actions">
                   <span class="modal-badge">ADMIN ONLY</span>
-                  <h3>{{ i18n.isRtl() ? 'توكن تشغيل معالج Kaggle GPU (T4)' : 'Kaggle GPU Dispatch Token & Command' }}</h3>
+                  <h3>{{ i18n.isRtl() ? 'إعدادات معالج Colab Meshroom Worker (Cell 1)' : 'Colab Meshroom Worker (Cell 1) Dispatch Credentials' }}</h3>
                 </div>
                 <button type="button" class="toast-close" (click)="showTokenModal.set(false)">✕</button>
               </div>
@@ -308,14 +311,27 @@ interface RoomParsedMetrics {
                 <div class="info-alert">
                   <p>
                     {{ i18n.isRtl()
-                      ? 'تم توليد توكن مصادقة مؤقت (صالح لمدة 12 ساعة). استخدم هذا التوكن لتشغيل النوت بوك على Kaggle مع تسريع GPU T4 x2 لمعالجة الغرف.'
-                      : 'Temporary 12-hour CSPRNG authentication token generated. Inject these variables into your Kaggle Notebook (NVIDIA T4 x2 GPU) to run reconstruction.' }}
+                      ? 'تم توليد توكن عامل مؤقت (صالح لمدة 12 ساعة). انسخ متغيرات Cell 1 التالية إلى نوت بوك Google Colab T4 (Meshroom 2023.3.0) لتشغيل المعالجة وإخراج .glb.'
+                      : 'Temporary 12-hour worker token generated. Paste these variables into Google Colab Meshroom Worker (Cell 1) to claim, reconstruct .glb meshes, and upload results.' }}
                   </p>
                 </div>
 
                 <div class="token-field-group">
                   <div class="field-label-row">
-                    <label>JOB_ID</label>
+                    <label>API_BASE_URL</label>
+                    <span class="metric-subtitle">{{ i18n.isRtl() ? 'رابط الـ Backend API' : 'Backend API Base URL' }}</span>
+                  </div>
+                  <div class="copy-box">
+                    <input type="text" class="input-control font-mono" [value]="getColabApiBaseUrl()" readonly />
+                    <button type="button" class="btn btn-secondary" (click)="copyToClipboard(getColabApiBaseUrl(), 'colabApiBaseUrl')">
+                      {{ isCopied('colabApiBaseUrl') ? (i18n.isRtl() ? '✓ تم النسخ' : '✓ Copied') : (i18n.isRtl() ? 'نسخ' : 'Copy') }}
+                    </button>
+                  </div>
+                </div>
+
+                <div class="token-field-group">
+                  <div class="field-label-row">
+                    <label>SCAN_ID</label>
                     <span class="metric-subtitle">{{ i18n.isRtl() ? 'معرف جلسة المسح' : 'Scan Job UUID' }}</span>
                   </div>
                   <div class="copy-box">
@@ -351,28 +367,27 @@ interface RoomParsedMetrics {
 
                 <div class="token-field-group">
                   <div class="field-label-row">
-                    <label>{{ i18n.isRtl() ? 'أمر إطلاق الباش (Bash / Terminal)' : 'Bash Shell Command' }}</label>
+                    <label>HMAC_SECRET</label>
+                    <span class="metric-subtitle">
+                      {{ i18n.isRtl() ? 'سر منفصل عن WORKER_TOKEN (إعداد Webhook:Secret في الباك إند)' : 'Separate webhook signing secret (Backend Webhook:Secret / WEBHOOK_SECRET)' }}
+                    </span>
                   </div>
-                  <div class="code-preview-wrap">
-                    <pre class="code-snippet font-mono">export JOB_ID="{{ dispatchTokenData()!.scanId }}"
-export WORKER_TOKEN="{{ dispatchTokenData()!.workerToken }}"
-python -m worker_client</pre>
-                    <button type="button" class="btn-copy-code" (click)="copyToClipboard(getBashCommandSnippet(), 'bashCmd')">
-                      {{ isCopied('bashCmd') ? '✓ ' + (i18n.isRtl() ? 'تم النسخ' : 'Copied') : '📋 ' + (i18n.isRtl() ? 'نسخ الأمر' : 'Copy Command') }}
+                  <div class="copy-box">
+                    <input type="text" class="input-control font-mono" [value]="colabHmacSecretPlaceholder" readonly />
+                    <button type="button" class="btn btn-secondary" (click)="copyToClipboard(colabHmacSecretPlaceholder, 'hmacSecret')">
+                      {{ isCopied('hmacSecret') ? (i18n.isRtl() ? '✓ تم النسخ' : '✓ Copied') : (i18n.isRtl() ? 'نسخ' : 'Copy') }}
                     </button>
                   </div>
                 </div>
 
                 <div class="token-field-group">
                   <div class="field-label-row">
-                    <label>{{ i18n.isRtl() ? 'كود نوت بوك Kaggle (Python Cell)' : 'Kaggle Notebook Python Cell' }}</label>
+                    <label>{{ i18n.isRtl() ? 'كود Colab Meshroom Worker (Cell 1)' : 'Colab Meshroom Worker (Cell 1)' }}</label>
                   </div>
                   <div class="code-preview-wrap">
-                    <pre class="code-snippet font-mono">import os
-os.environ["JOB_ID"] = "{{ dispatchTokenData()!.scanId }}"
-os.environ["WORKER_TOKEN"] = "{{ dispatchTokenData()!.workerToken }}"</pre>
+                    <pre class="code-snippet font-mono">{{ getPythonSnippet() }}</pre>
                     <button type="button" class="btn-copy-code" (click)="copyToClipboard(getPythonSnippet(), 'pySnippet')">
-                      {{ isCopied('pySnippet') ? '✓ ' + (i18n.isRtl() ? 'تم النسخ' : 'Copied') : '📋 ' + (i18n.isRtl() ? 'نسخ الكود' : 'Copy Python') }}
+                      {{ isCopied('pySnippet') ? '✓ ' + (i18n.isRtl() ? 'تم النسخ' : 'Copied') : '📋 ' + (i18n.isRtl() ? 'نسخ Cell 1' : 'Copy Cell 1') }}
                     </button>
                   </div>
                 </div>
@@ -442,8 +457,15 @@ os.environ["WORKER_TOKEN"] = "{{ dispatchTokenData()!.workerToken }}"</pre>
 
                   <div class="room-stats-row">
                     <div class="room-stat-item">
-                      <span class="progress-step-text">{{ i18n.isRtl() ? 'حجم .sog:' : '.sog Size:' }}</span>
-                      <span class="font-mono">{{ parsedM.sogModelSizeMb ? parsedM.sogModelSizeMb + ' MB' : '--' }}</span>
+                      <span class="progress-step-text">
+                        {{ parsedM.modelFormat === 'sog' ? (i18n.isRtl() ? 'حجم .sog:' : '.sog Size:') : (i18n.isRtl() ? 'حجم .glb:' : '.glb Size:') }}
+                      </span>
+                      <span class="font-mono">{{ (parsedM.glbSizeMb ?? parsedM.sogModelSizeMb) ? (parsedM.glbSizeMb ?? parsedM.sogModelSizeMb) + ' MB' : '--' }}</span>
+                    </div>
+
+                    <div class="room-stat-item">
+                      <span class="progress-step-text">{{ parsedM.modelFormat === 'sog' ? (i18n.isRtl() ? 'النقاط:' : 'Splats:') : (i18n.isRtl() ? 'المثلثات:' : 'Triangles:') }}</span>
+                      <span class="font-mono">{{ parsedM.triangles ? parsedM.triangles.toLocaleString() : '--' }}</span>
                     </div>
 
                     <div class="room-stat-item">
@@ -698,6 +720,7 @@ export class ScanJobsMonitorComponent implements OnInit, OnDestroy {
   readonly actionMessage = signal<{ type: 'success' | 'error'; text: string } | null>(null);
 
   readonly copiedMap = signal<Record<string, boolean>>({});
+  readonly colabHmacSecretPlaceholder = 'DefaultDevelopmentWebhookSecretKey1234567890!';
   private autoRefreshTimer: ReturnType<typeof setInterval> | null = null;
 
   readonly aggregatedMetrics = computed(() => {
@@ -706,26 +729,31 @@ export class ScanJobsMonitorComponent implements OnInit, OnDestroy {
       return {
         camerasRegisteredPct: '--',
         sogModelSizeMb: '--',
+        modelSizeMb: '--',
         processingTime: '--',
-        gaussianCount: '--'
+        gaussianCount: '--',
+        triangleCount: '--'
       };
     }
 
     const sStatus = normalizeScanJobStatus(s.status);
-    let totalSogMb = 0;
+    let totalModelMb = 0;
     let camerasPctSum = 0;
     let camerasPctCount = 0;
-    let totalGaussian = 0;
+    let totalPrimitives = 0;
 
     for (const room of s.rooms || []) {
       const pm = this.parseRoomMetrics(room);
-      if (pm.sogModelSizeMb) totalSogMb += pm.sogModelSizeMb;
+      const sizeMb = pm.glbSizeMb ?? pm.sogModelSizeMb;
+      if (sizeMb) totalModelMb += sizeMb;
       if (pm.camerasRegisteredPct !== undefined) {
         camerasPctSum += pm.camerasRegisteredPct;
         camerasPctCount++;
       }
-      if (room.gaussianCount) {
-        totalGaussian += room.gaussianCount;
+      if (pm.triangles) {
+        totalPrimitives += pm.triangles;
+      } else if (room.gaussianCount) {
+        totalPrimitives += room.gaussianCount;
       }
     }
 
@@ -748,11 +776,16 @@ export class ScanJobsMonitorComponent implements OnInit, OnDestroy {
       procTimeStr = `${m}m ${sec}s`;
     }
 
+    const formattedSize = totalModelMb > 0 ? totalModelMb.toFixed(1) : '--';
+    const formattedCount = totalPrimitives > 0 ? totalPrimitives.toLocaleString() : '--';
+
     return {
       camerasRegisteredPct: avgCameras,
-      sogModelSizeMb: totalSogMb > 0 ? totalSogMb.toFixed(1) : '--',
+      sogModelSizeMb: formattedSize,
+      modelSizeMb: formattedSize,
       processingTime: procTimeStr,
-      gaussianCount: totalGaussian > 0 ? totalGaussian.toLocaleString() : '--'
+      gaussianCount: formattedCount,
+      triangleCount: formattedCount
     };
   });
 
@@ -913,7 +946,7 @@ export class ScanJobsMonitorComponent implements OnInit, OnDestroy {
         this.showTokenModal.set(true);
         this.actionMessage.set({
           type: 'success',
-          text: this.i18n.isRtl() ? 'تم توليد توكن Kaggle Dispatch بنجاح (صالح 12 ساعة)' : 'Kaggle Dispatch token minted successfully (12-hour TTL)'
+          text: this.i18n.isRtl() ? 'تم توليد توكن Colab Worker بنجاح (صالح 12 ساعة)' : 'Colab Worker token minted successfully (12-hour TTL)'
         });
       },
       error: (err) => {
@@ -1100,9 +1133,20 @@ export class ScanJobsMonitorComponent implements OnInit, OnDestroy {
 
   parseRoomMetrics(room: ScanRoomJobDto): RoomParsedMetrics {
     const res: RoomParsedMetrics = {};
+    const lowerKey = (room.outputR2Key || '').toLowerCase();
+    res.modelFormat = lowerKey.endsWith('.sog') ? 'sog' : 'glb';
 
     if (room.outputSizeBytes) {
-      res.sogModelSizeMb = Number((room.outputSizeBytes / (1024 * 1024)).toFixed(2));
+      const sizeMb = Number((room.outputSizeBytes / (1024 * 1024)).toFixed(2));
+      if (res.modelFormat === 'sog') {
+        res.sogModelSizeMb = sizeMb;
+      } else {
+        res.glbSizeMb = sizeMb;
+      }
+    }
+
+    if (room.gaussianCount) {
+      res.triangles = Number(room.gaussianCount);
     }
 
     if (room.metricsJson) {
@@ -1112,9 +1156,18 @@ export class ScanJobsMonitorComponent implements OnInit, OnDestroy {
         else if (d.cameras_registered_pct !== undefined) res.camerasRegisteredPct = Number(d.cameras_registered_pct);
         else if (d.registered_cameras_pct !== undefined) res.camerasRegisteredPct = Number(d.registered_cameras_pct);
 
+        if (d.glbSizeMb !== undefined) res.glbSizeMb = Number(d.glbSizeMb);
+        else if (d.glb_size_mb !== undefined) res.glbSizeMb = Number(d.glb_size_mb);
+        else if (d.sizes_mb?.mobile !== undefined) res.glbSizeMb = Number(d.sizes_mb.mobile);
+        else if (d.sizes_mb?.full !== undefined) res.glbSizeMb = Number(d.sizes_mb.full);
+
         if (d.sogModelSizeMb !== undefined) res.sogModelSizeMb = Number(d.sogModelSizeMb);
         else if (d.sog_model_size_mb !== undefined) res.sogModelSizeMb = Number(d.sog_model_size_mb);
         else if (d.sog_size !== undefined) res.sogModelSizeMb = Number((d.sog_size / (1024 * 1024)).toFixed(2));
+
+        if (d.triangles !== undefined) res.triangles = Number(d.triangles);
+        else if (d.triangleCount !== undefined) res.triangles = Number(d.triangleCount);
+        else if (d.triangle_count !== undefined) res.triangles = Number(d.triangle_count);
 
         if (d.psnr !== undefined) res.psnr = Number(d.psnr);
         if (d.ssim !== undefined) res.ssim = Number(d.ssim);
@@ -1151,8 +1204,8 @@ export class ScanJobsMonitorComponent implements OnInit, OnDestroy {
   getRoomStatusStepDescription(status: string | number): string {
     const isAr = this.i18n.isRtl();
     switch (normalizeScanRoomStatus(status)) {
-      case 'Completed': return isAr ? 'اكتمل بناء مجسم .sog' : '.sog model generated';
-      case 'Processing': return isAr ? 'حساب التدريب والـ Splats في Kaggle' : 'Gaussian training on GPU';
+      case 'Completed': return isAr ? 'اكتمل بناء مجسم .glb' : '.glb mesh generated';
+      case 'Processing': return isAr ? 'المعالجة ثلاثية الأبعاد على Colab T4 (Meshroom)' : 'Meshroom 3D reconstruction on GPU';
       case 'Pending': return isAr ? 'المقطع مرفوع، في انتظار المعالج' : 'Video uploaded, awaiting worker';
       case 'Uploading': return isAr ? 'جاري رفع الفيديو من الهاتف' : 'Uploading video from device';
       case 'Failed': return isAr ? 'فشلت المعالجة' : 'Reconstruction failed';
@@ -1192,16 +1245,26 @@ export class ScanJobsMonitorComponent implements OnInit, OnDestroy {
     return `${viewerUrl}/v/${link.token}`;
   }
 
+  getColabApiBaseUrl(): string {
+    return API_CONFIG.baseUrl.replace(/\/+$/, '');
+  }
+
   getBashCommandSnippet(): string {
     const data = this.dispatchTokenData();
     if (!data) return '';
-    return `export JOB_ID="${data.scanId}"\nexport WORKER_TOKEN="${data.workerToken}"\npython -m worker_client`;
+    return `export API_BASE_URL="${this.getColabApiBaseUrl()}"\nexport SCAN_ID="${data.scanId}"\nexport WORKER_TOKEN="${data.workerToken}"\nexport HMAC_SECRET="${this.colabHmacSecretPlaceholder}"`;
   }
 
   getPythonSnippet(): string {
     const data = this.dispatchTokenData();
     if (!data) return '';
-    return `import os\nos.environ["JOB_ID"] = "${data.scanId}"\nos.environ["WORKER_TOKEN"] = "${data.workerToken}"`;
+    return [
+      '# Colab Meshroom Worker (Cell 1)',
+      `API_BASE_URL = "${this.getColabApiBaseUrl()}"`,
+      `SCAN_ID = "${data.scanId}"`,
+      `WORKER_TOKEN = "${data.workerToken}"`,
+      `HMAC_SECRET = "${this.colabHmacSecretPlaceholder}"`
+    ].join('\n');
   }
 
   copyToClipboard(text: string, key: string): void {
