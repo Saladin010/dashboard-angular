@@ -10,18 +10,31 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute, RouterModule } from '@angular/router';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { Subscription } from 'rxjs';
 
 import { ScansService } from '../../core/services/scans.service';
+import { PropertiesService } from '../../core/services/properties.service';
 import { API_CONFIG } from '../../core/config/api.config';
+import { extractApiErrorMessage } from '../../core/utils/api-error.util';
 import {
   ScanPreviewDto,
   SceneConfigurationDto,
-  SceneRoomConfigDto,
+  SceneItemDto,
+  SceneItemHotspotsPayload,
   SceneHotspotDto
 } from '../../core/models/scan.model';
+
+interface RoomStudioState {
+  roomLabel: string;
+  sortOrder: number;
+  cropBounds: [number, number, number, number, number, number];
+  floorTiltDegrees: number;
+  cameraPosition?: number[];
+  cameraTarget?: number[];
+  links: SceneHotspotDto[];
+}
 
 @Component({
   selector: 'app-studio-wrapper',
@@ -32,28 +45,29 @@ import {
 })
 export class StudioWrapperComponent implements OnInit, OnDestroy {
   private readonly scansService = inject(ScansService);
+  private readonly propertiesService = inject(PropertiesService);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   private readonly sanitizer = inject(DomSanitizer);
 
   @ViewChild('editorFrame') editorFrame?: ElementRef<HTMLIFrameElement>;
 
-  // Route / state signals
   readonly scanId = signal<string>('');
-  readonly loading = signal<boolean>(true);
+  readonly loading = signal<boolean>(false);
   readonly error = signal<string | null>(null);
   readonly scanPreview = signal<ScanPreviewDto | null>(null);
   readonly editorReady = signal<boolean>(false);
 
-  // Active room & Scene configuration
-  readonly activeRoomId = signal<string>('');
-  readonly sceneConfig = signal<SceneConfigurationDto>({
-    version: 1,
-    rooms: {},
-    hotspots: []
-  });
-  readonly expectedVersion = signal<number>(1);
+  // Quick scan picker when /studio opened without :scanId
+  readonly availableScans = signal<{ scanId: string; propertyTitle: string }[]>([]);
 
-  // 6-DOF Crop Box sliders (min/max X, Y, Z)
+  readonly activeRoomId = signal<string>('');
+  readonly expectedVersion = signal<number>(0);
+  readonly eyeHeightMeters = signal<number>(1.6);
+  readonly defaultSceneId = signal<string>('');
+  private roomStates = signal<Record<string, RoomStudioState>>({});
+
+  // 6-DOF Crop Box sliders
   readonly cropMinX = signal<number>(-5);
   readonly cropMaxX = signal<number>(5);
   readonly cropMinY = signal<number>(-2);
@@ -78,35 +92,32 @@ export class StudioWrapperComponent implements OnInit, OnDestroy {
 
   private routeSub?: Subscription;
 
-  // Editor safe URL
   readonly editorSafeUrl = computed<SafeResourceUrl>(() => {
-    const base = API_CONFIG.studioBaseUrl || API_CONFIG.viewerBaseUrl || 'https://studio-editor-dmx.pages.dev';
+    const base = API_CONFIG.studioBaseUrl || 'https://studio-editor-dmx.pages.dev';
     return this.sanitizer.bypassSecurityTrustResourceUrl(base);
   });
 
-  // Current room hotspots
   readonly currentRoomHotspots = computed<SceneHotspotDto[]>(() => {
     const currentId = this.activeRoomId();
-    return this.sceneConfig().hotspots.filter(h => h.sourceRoomId === currentId);
+    return this.roomStates()[currentId]?.links || [];
   });
 
-  // Other available rooms for transition hotspot destination
   readonly otherRooms = computed(() => {
     const currentId = this.activeRoomId();
-    return (this.scanPreview()?.rooms || []).filter(r => r.roomId !== currentId);
+    return (this.scanPreview()?.rooms || []).filter((r) => r.roomId !== currentId);
   });
 
   ngOnInit(): void {
     window.addEventListener('message', this.handleWindowMessage);
 
-    this.routeSub = this.route.paramMap.subscribe(params => {
+    this.routeSub = this.route.paramMap.subscribe((params) => {
       const id = params.get('scanId') || this.route.snapshot.queryParamMap.get('scanId') || '';
       if (id) {
         this.scanId.set(id);
         this.loadScanPreview();
       } else {
-        // If loaded directly without scanId, try query params or mock fallback
         this.loading.set(false);
+        this.loadAvailableScans();
       }
     });
   }
@@ -114,6 +125,31 @@ export class StudioWrapperComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     window.removeEventListener('message', this.handleWindowMessage);
     this.routeSub?.unsubscribe();
+  }
+
+  private loadAvailableScans(): void {
+    this.propertiesService.getProperties({ pageSize: 20 }).subscribe({
+      next: (res) => {
+        const list: { scanId: string; propertyTitle: string }[] = [];
+        for (const prop of res.items || []) {
+          this.propertiesService.getPropertyScans(prop.id).subscribe({
+            next: (scans) => {
+              for (const sc of scans || []) {
+                list.push({ scanId: sc.id, propertyTitle: prop.title });
+              }
+              this.availableScans.set([...list]);
+            },
+            error: () => {}
+          });
+        }
+      },
+      error: () => {}
+    });
+  }
+
+  onSelectAvailableScan(scanId: string): void {
+    if (!scanId) return;
+    this.router.navigate(['/studio', scanId]);
   }
 
   onIframeLoaded(): void {
@@ -135,17 +171,60 @@ export class StudioWrapperComponent implements OnInit, OnDestroy {
       next: (preview) => {
         this.loading.set(false);
         this.scanPreview.set(preview);
-        const version = preview.sceneConfig?.version ?? 1;
-        this.expectedVersion.set(version);
-        this.sceneConfig.set(preview.sceneConfig || {
-          version,
-          rooms: {},
-          hotspots: []
-        });
+        const cfg = preview.sceneConfig;
+        this.expectedVersion.set(cfg?.version ?? 0);
+        this.eyeHeightMeters.set(cfg?.eyeHeightMeters ?? 1.6);
 
-        // Determine initial active room
+        const initialDefault =
+          cfg?.defaultSceneId ||
+          preview.rooms?.[0]?.roomId ||
+          '';
+        this.defaultSceneId.set(initialDefault);
+
+        // Hydrate roomStates from backend scenes + preview rooms
+        const nextStates: Record<string, RoomStudioState> = {};
+        const scenesByRoomId = new Map<string, SceneItemDto>();
+        for (const s of cfg?.scenes || []) {
+          scenesByRoomId.set(s.roomId, s);
+        }
+
+        for (const r of preview.rooms || []) {
+          const existing = scenesByRoomId.get(r.roomId);
+          const hsRaw = existing?.hotspots;
+          let cropBounds: [number, number, number, number, number, number] = [-5, 5, -2, 4, -5, 5];
+          let floorTiltDegrees = 0;
+          let links: SceneHotspotDto[] = [];
+
+          if (Array.isArray(hsRaw)) {
+            links = hsRaw;
+          } else if (hsRaw && typeof hsRaw === 'object') {
+            const payload = hsRaw as SceneItemHotspotsPayload;
+            if (Array.isArray(payload.cropBounds) && payload.cropBounds.length === 6) {
+              cropBounds = payload.cropBounds as [number, number, number, number, number, number];
+            }
+            if (typeof payload.floorTiltDegrees === 'number') {
+              floorTiltDegrees = payload.floorTiltDegrees;
+            }
+            if (Array.isArray(payload.links)) {
+              links = payload.links;
+            }
+          }
+
+          nextStates[r.roomId] = {
+            roomLabel: existing?.roomLabel || r.roomLabel || r.roomId,
+            sortOrder: existing?.sortOrder ?? r.sortOrder ?? 0,
+            cropBounds,
+            floorTiltDegrees,
+            cameraPosition: existing?.cameraPosition ?? undefined,
+            cameraTarget: existing?.cameraTarget ?? undefined,
+            links
+          };
+        }
+
+        this.roomStates.set(nextStates);
+
         if (preview.rooms && preview.rooms.length > 0) {
-          const initialRoom = preview.sceneConfig?.defaultRoomId || preview.rooms[0].roomId;
+          const initialRoom = nextStates[initialDefault] ? initialDefault : preview.rooms[0].roomId;
           this.activeRoomId.set(initialRoom);
           this.applyRoomConfigToSliders(initialRoom);
           this.syncActiveRoomToEditor();
@@ -153,39 +232,35 @@ export class StudioWrapperComponent implements OnInit, OnDestroy {
       },
       error: (err) => {
         this.loading.set(false);
-        this.error.set(err?.error?.message || 'فشل تحميل بيانات معاينة المسح ثلاثي الأبعاد.');
+        this.error.set(extractApiErrorMessage(err, 'فشل تحميل بيانات معاينة المسح ثلاثي الأبعاد.'));
       }
     });
   }
 
   selectRoom(roomId: string): void {
     if (this.activeRoomId() === roomId) return;
-
-    // Persist current sliders to active room config before switching
     this.persistCurrentRoomToConfig();
-
     this.activeRoomId.set(roomId);
     this.applyRoomConfigToSliders(roomId);
     this.syncActiveRoomToEditor();
   }
 
   private applyRoomConfigToSliders(roomId: string): void {
-    const config = this.sceneConfig().rooms[roomId];
-    if (config) {
-      if (config.cropBounds && config.cropBounds.length === 6) {
-        this.cropMinX.set(config.cropBounds[0]);
-        this.cropMaxX.set(config.cropBounds[1]);
-        this.cropMinY.set(config.cropBounds[2]);
-        this.cropMaxY.set(config.cropBounds[3]);
-        this.cropMinZ.set(config.cropBounds[4]);
-        this.cropMaxZ.set(config.cropBounds[5]);
+    const st = this.roomStates()[roomId];
+    if (st) {
+      this.cropMinX.set(st.cropBounds[0]);
+      this.cropMaxX.set(st.cropBounds[1]);
+      this.cropMinY.set(st.cropBounds[2]);
+      this.cropMaxY.set(st.cropBounds[3]);
+      this.cropMinZ.set(st.cropBounds[4]);
+      this.cropMaxZ.set(st.cropBounds[5]);
+      this.floorTilt.set(st.floorTiltDegrees);
+      if (st.cameraPosition && st.cameraTarget) {
+        this.spawnPose.set([...st.cameraPosition, ...st.cameraTarget]);
+      } else {
+        this.spawnPose.set(null);
       }
-      if (typeof config.floorTiltDegrees === 'number') {
-        this.floorTilt.set(config.floorTiltDegrees);
-      }
-      this.spawnPose.set(config.defaultSpawnPose || null);
     } else {
-      // Default initial slider values
       this.cropMinX.set(-5);
       this.cropMaxX.set(5);
       this.cropMinY.set(-2);
@@ -196,7 +271,6 @@ export class StudioWrapperComponent implements OnInit, OnDestroy {
       this.spawnPose.set(null);
     }
 
-    // Set default target room for hotspots
     const others = this.otherRooms();
     if (others.length > 0) {
       this.hotspotTargetRoomId.set(others[0].roomId);
@@ -207,12 +281,17 @@ export class StudioWrapperComponent implements OnInit, OnDestroy {
     const roomId = this.activeRoomId();
     if (!roomId) return;
 
-    const currentRooms = { ...this.sceneConfig().rooms };
-    const room = this.scanPreview()?.rooms.find(r => r.roomId === roomId);
-    const roomName = room?.roomName || currentRooms[roomId]?.roomName || 'الغرفة';
+    const current = { ...this.roomStates() };
+    const existing = current[roomId];
+    const room = this.scanPreview()?.rooms.find((r) => r.roomId === roomId);
 
-    const updatedRoomConfig: SceneRoomConfigDto = {
-      roomName,
+    const pose = this.spawnPose();
+    const cameraPosition = pose && pose.length >= 3 ? pose.slice(0, 3) : existing?.cameraPosition;
+    const cameraTarget = pose && pose.length >= 6 ? pose.slice(3, 6) : existing?.cameraTarget;
+
+    current[roomId] = {
+      roomLabel: room?.roomLabel || existing?.roomLabel || roomId,
+      sortOrder: room?.sortOrder ?? existing?.sortOrder ?? 0,
       cropBounds: [
         this.cropMinX(),
         this.cropMaxX(),
@@ -222,15 +301,12 @@ export class StudioWrapperComponent implements OnInit, OnDestroy {
         this.cropMaxZ()
       ],
       floorTiltDegrees: this.floorTilt(),
-      defaultSpawnPose: this.spawnPose() || undefined
+      cameraPosition,
+      cameraTarget,
+      links: existing?.links || []
     };
 
-    currentRooms[roomId] = updatedRoomConfig;
-
-    this.sceneConfig.set({
-      ...this.sceneConfig(),
-      rooms: currentRooms
-    });
+    this.roomStates.set(current);
   }
 
   private syncActiveRoomToEditor(): void {
@@ -238,12 +314,11 @@ export class StudioWrapperComponent implements OnInit, OnDestroy {
     const preview = this.scanPreview();
     if (!roomId || !preview) return;
 
-    const room = preview.rooms.find(r => r.roomId === roomId);
+    const room = preview.rooms.find((r) => r.roomId === roomId);
     if (room && room.signedModelUrl) {
       this.sendToEditor('studio:loadSog', { signedModelUrl: room.signedModelUrl });
     }
 
-    // Send crop box bounds
     const bounds: [number, number, number, number, number, number] = [
       this.cropMinX(),
       this.cropMaxX(),
@@ -253,8 +328,6 @@ export class StudioWrapperComponent implements OnInit, OnDestroy {
       this.cropMaxZ()
     ];
     this.sendToEditor('studio:setCropBox', { bounds });
-
-    // Send floor tilt
     this.sendToEditor('studio:setFloorTilt', { degrees: this.floorTilt() });
   }
 
@@ -301,35 +374,39 @@ export class StudioWrapperComponent implements OnInit, OnDestroy {
   }
 
   private addHotspotAtCoords(coords: [number, number, number]): void {
+    const roomId = this.activeRoomId();
     const targetId = this.hotspotTargetRoomId();
-    const targetRoom = this.scanPreview()?.rooms.find(r => r.roomId === targetId);
-    const targetName = targetRoom?.roomName || 'الغرفة الهدف';
+    const targetRoom = this.scanPreview()?.rooms.find((r) => r.roomId === targetId);
+    const targetName = targetRoom?.roomLabel || 'الغرفة الهدف';
     const title = this.hotspotTitle() || `الانتقال إلى ${targetName}`;
 
     const newHotspot: SceneHotspotDto = {
       id: 'hs_' + Math.random().toString(36).substring(2, 9),
-      sourceRoomId: this.activeRoomId(),
+      sourceRoomId: roomId,
       targetRoomId: targetId,
       title,
       position: coords
     };
 
-    const currentConfig = this.sceneConfig();
-    this.sceneConfig.set({
-      ...currentConfig,
-      hotspots: [...currentConfig.hotspots, newHotspot]
-    });
+    const current = { ...this.roomStates() };
+    const st = current[roomId];
+    if (st) {
+      current[roomId] = { ...st, links: [...st.links, newHotspot] };
+      this.roomStates.set(current);
+    }
 
     this.isPlacingHotspot.set(false);
     this.hotspotTitle.set('');
   }
 
   removeHotspot(hotspotId: string): void {
-    const currentConfig = this.sceneConfig();
-    this.sceneConfig.set({
-      ...currentConfig,
-      hotspots: currentConfig.hotspots.filter(h => h.id !== hotspotId)
-    });
+    const roomId = this.activeRoomId();
+    const current = { ...this.roomStates() };
+    const st = current[roomId];
+    if (st) {
+      current[roomId] = { ...st, links: st.links.filter((h) => h.id !== hotspotId) };
+      this.roomStates.set(current);
+    }
   }
 
   saveSceneConfig(): void {
@@ -337,6 +414,27 @@ export class StudioWrapperComponent implements OnInit, OnDestroy {
     if (!id) return;
 
     this.persistCurrentRoomToConfig();
+    const states = this.roomStates();
+    const scenes: SceneItemDto[] = Object.entries(states).map(([roomId, st]) => ({
+      roomId,
+      roomLabel: st.roomLabel,
+      sortOrder: st.sortOrder,
+      cameraPosition: st.cameraPosition ?? null,
+      cameraTarget: st.cameraTarget ?? null,
+      hotspots: {
+        cropBounds: st.cropBounds,
+        floorTiltDegrees: st.floorTiltDegrees,
+        links: st.links
+      }
+    }));
+
+    if (scenes.length === 0) {
+      this.error.set('لا توجد غرف متاحة لحفظ إعدادات المشهد.');
+      return;
+    }
+
+    const defaultId = this.defaultSceneId() || this.activeRoomId() || scenes[0].roomId;
+
     this.saving.set(true);
     this.saveSuccess.set(false);
     this.conflictError.set(null);
@@ -344,13 +442,14 @@ export class StudioWrapperComponent implements OnInit, OnDestroy {
 
     this.scansService.updateSceneConfig(id, {
       expectedVersion: this.expectedVersion(),
-      config: this.sceneConfig()
+      defaultSceneId: defaultId,
+      eyeHeightMeters: Math.min(3.0, Math.max(0.5, this.eyeHeightMeters() || 1.6)),
+      scenes
     }).subscribe({
-      next: (updatedConfig) => {
+      next: (updatedConfig: SceneConfigurationDto) => {
         this.saving.set(false);
         this.saveSuccess.set(true);
         this.expectedVersion.set(updatedConfig.version);
-        this.sceneConfig.set(updatedConfig);
         setTimeout(() => this.saveSuccess.set(false), 3000);
       },
       error: (err) => {
@@ -358,8 +457,8 @@ export class StudioWrapperComponent implements OnInit, OnDestroy {
         if (err.status === 409) {
           this.conflictError.set('تم تعديل هذا المشهد بواسطة مستخدم آخر. الإصدار المتوقع لم يعد متطابقاً مع قاعدة البيانات.');
         } else {
-          this.error.set(err?.error?.message || 'فشل حفظ إعدادات المشهد.');
-          setTimeout(() => this.error.set(null), 4000);
+          this.error.set(extractApiErrorMessage(err, 'فشل حفظ إعدادات المشهد.'));
+          setTimeout(() => this.error.set(null), 5000);
         }
       }
     });
@@ -370,7 +469,7 @@ export class StudioWrapperComponent implements OnInit, OnDestroy {
     this.loadScanPreview();
   }
 
-  private sendToEditor(type: string, payload?: any): void {
+  private sendToEditor(type: string, payload?: unknown): void {
     const iframe = this.editorFrame?.nativeElement;
     if (iframe && iframe.contentWindow) {
       iframe.contentWindow.postMessage({ type, payload }, '*');

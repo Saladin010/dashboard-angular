@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { SidebarComponent } from './sidebar.component';
@@ -11,11 +11,11 @@ import { I18nService } from '../core/services/i18n.service';
   imports: [CommonModule, RouterModule, SidebarComponent, HeaderComponent],
   template: `
     <div class="app-layout" [attr.dir]="i18n.dir()">
-      <app-sidebar></app-sidebar>
-      
+      <app-sidebar [mobileOpen]="mobileMenuOpen()" (closeMenu)="mobileMenuOpen.set(false)"></app-sidebar>
+
       <div class="main-wrapper">
-        <app-header></app-header>
-        
+        <app-header (menuToggle)="mobileMenuOpen.set(!mobileMenuOpen())"></app-header>
+
         <main class="page-content">
           <router-outlet></router-outlet>
         </main>
@@ -44,8 +44,13 @@ import { I18nService } from '../core/services/i18n.service';
       width: 100%;
       margin: 0 auto;
     }
+
+    @media (max-width: 768px) {
+      .page-content { padding: 1rem; }
+    }
   `]
 })
 export class LayoutComponent {
   readonly i18n = inject(I18nService);
+  readonly mobileMenuOpen = signal(false);
 }

@@ -7,55 +7,51 @@ export interface PropertyDto {
   title: string;
   district: string;
   city: string;
+  listingType: ListingType | string;
   price: number;
   currency: string;
-  areaSquareMeters: number;
+  areaSqm: number;
   floorNumber: number;
   roomsCount: number;
   bathroomsCount: number;
-  finishingType: FinishingType;
-  listingType: ListingType;
-  status: PropertyStatus;
-  publicDescription?: string;
+  finishingType: FinishingType | string;
+  publicDescription?: string | null;
+  status: PropertyStatus | string;
   assignedAgentId: string;
-  activeScanId?: string;
-  thumbnailUrl?: string;
+  assignedAgentName?: string | null;
   createdAt: string;
-  updatedAt?: string;
-}
-
-export interface PropertyPrivateDetailsDto {
-  ownerName: string;
-  ownerPhone: string;
-  exactStreetAddress: string;
-  latitude?: number;
-  longitude?: number;
-  googleMapsUrl?: string;
-  internalNotes?: string;
+  updatedAt?: string | null;
 }
 
 export interface PropertyInternalDto extends PropertyDto {
-  privateDetails?: PropertyPrivateDetailsDto;
+  ownerName: string;
+  ownerPhone: string;
+  exactStreetAddress: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  googleMapsUrl?: string | null;
+  internalNotes?: string | null;
 }
 
 export interface CreatePropertyRequestDto {
   title: string;
   district: string;
   city: string;
+  listingType: string;
   price: number;
-  currency: string;
-  areaSquareMeters: number;
+  currency?: string;
+  areaSqm: number;
   floorNumber: number;
   roomsCount: number;
   bathroomsCount: number;
   finishingType: string;
-  listingType: string;
   publicDescription?: string;
+  assignedAgentId?: string;
   ownerName: string;
   ownerPhone: string;
   exactStreetAddress: string;
-  latitude?: number;
-  longitude?: number;
+  latitude?: number | null;
+  longitude?: number | null;
   googleMapsUrl?: string;
   internalNotes?: string;
 }
@@ -64,33 +60,32 @@ export interface UpdatePropertyRequestDto {
   title: string;
   district: string;
   city: string;
+  listingType: string;
   price: number;
-  currency: string;
-  areaSquareMeters: number;
+  currency?: string;
+  areaSqm: number;
   floorNumber: number;
   roomsCount: number;
   bathroomsCount: number;
   finishingType: string;
-  listingType: string;
-  status: string;
   publicDescription?: string;
   ownerName: string;
   ownerPhone: string;
   exactStreetAddress: string;
-  latitude?: number;
-  longitude?: number;
+  latitude?: number | null;
+  longitude?: number | null;
   googleMapsUrl?: string;
   internalNotes?: string;
 }
 
 export interface ShareLinkDto {
   id: string;
-  token: string;
   propertyId: string;
-  scanId: string;
-  shareUrl: string;
+  token: string;
   isActive: boolean;
+  expiresAt?: string | null;
   viewCount: number;
-  lastViewedAt?: string;
+  createdBy: string;
+  createdByName?: string | null;
   createdAt: string;
 }

@@ -2,18 +2,16 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { API_CONFIG } from '../config/api.config';
-import { 
-  UserDto, 
-  CreateUserRequest, 
-  PatchUserRequest, 
-  PaginatedListOfUserDto 
+import {
+  UserDto,
+  CreateUserRequest,
+  PatchUserRequest,
+  PaginatedListOfUserDto
 } from '../models/auth.model';
 
 export interface UserFilterParams {
-  search?: string;
-  role?: string;
   isActive?: boolean;
-  pageIndex?: number;
+  page?: number;
   pageSize?: number;
 }
 
@@ -26,10 +24,8 @@ export class UsersService {
   getUsers(filters?: UserFilterParams): Observable<PaginatedListOfUserDto> {
     let params = new HttpParams();
     if (filters) {
-      if (filters.search) params = params.set('search', filters.search);
-      if (filters.role) params = params.set('role', filters.role);
       if (filters.isActive !== undefined) params = params.set('isActive', filters.isActive.toString());
-      if (filters.pageIndex !== undefined) params = params.set('pageIndex', filters.pageIndex.toString());
+      if (filters.page !== undefined) params = params.set('page', filters.page.toString());
       if (filters.pageSize !== undefined) params = params.set('pageSize', filters.pageSize.toString());
     }
 

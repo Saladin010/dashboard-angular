@@ -4,7 +4,7 @@
     <div class="header-main">
       <div class="title-group">
         <h1 class="property-title">
-          {{ scanPreview()?.propertyTitle || 'محرر المشاهد ثلاثية الأبعاد (SuperSplat Studio)' }}
+          محرر المشاهد ثلاثية الأبعاد (SuperSplat Studio)
         </h1>
         <div class="header-badges">
           <span class="badge badge-info">المسح: {{ scanId() || 'غير محدد' }}</span>
@@ -16,13 +16,21 @@
       </div>
 
       <div class="header-actions">
+        @if (!scanId() && availableScans().length > 0) {
+          <select class="input-control" (change)="onSelectAvailableScan($any($event.target).value)">
+            <option value="">-- اختر جلسة مسح للتحرير --</option>
+            @for (sc of availableScans(); track sc.scanId) {
+              <option [value]="sc.scanId">{{ sc.propertyTitle }} ({{ sc.scanId.substring(0, 8) }})</option>
+            }
+          </select>
+        }
         <a routerLink="/scans" class="btn btn-secondary">
           <span>&larr; العودة للمسوحات</span>
         </a>
-        <button 
+        <button
           type="button"
           class="btn btn-primary"
-          [disabled]="saving() || loading()"
+          [disabled]="saving() || loading() || !scanId()"
           (click)="saveSceneConfig()">
           @if (saving()) {
             <span>جاري الحفظ...</span>
@@ -49,7 +57,6 @@
       </div>
     }
 
-    <!-- Toast Notifications -->
     @if (saveSuccess()) {
       <div class="toast-success">
         ✓ تم حفظ إعدادات المشهد بنجاح (الإصدار v{{ expectedVersion() }})
@@ -80,9 +87,9 @@
         </div>
       }
 
-      <iframe 
-        #editorFrame 
-        [src]="editorSafeUrl()" 
+      <iframe
+        #editorFrame
+        [src]="editorSafeUrl()"
         class="editor-iframe"
         title="SuperSplat Studio 3D Editor"
         allow="fullscreen; xr-spatial-tracking"
@@ -106,12 +113,12 @@
         <p class="section-desc">اختر الغرفة للتنقل بين نماذج .sog وضبط إعداداتها:</p>
         <div class="room-pills">
           @for (room of scanPreview()?.rooms; track room.roomId) {
-            <button 
-              type="button" 
+            <button
+              type="button"
               class="room-pill"
               [class.active]="activeRoomId() === room.roomId"
               (click)="selectRoom(room.roomId)">
-              <span class="room-pill-name">{{ room.roomName }}</span>
+              <span class="room-pill-name">{{ room.roomLabel }}</span>
               <span class="status-indicator" [class.ready]="!!room.signedModelUrl"></span>
             </button>
           } @empty {
@@ -182,7 +189,7 @@
       <!-- Section 3: Floor Tilt & Scale Calibration -->
       <section class="sidebar-section">
         <h3 class="section-title">ضبط استواء الأرضية والمقياس</h3>
-        
+
         <div class="slider-group">
           <div class="slider-label">
             <span>ميل الأرضية (Floor Tilt):</span>
@@ -209,9 +216,9 @@
           }
         </div>
         <p class="section-desc">حرك الكاميرا داخل المشهد لمستوى النظر المطلوب ثم اضغط الزر لحفظ الموضع:</p>
-        
-        <button 
-          type="button" 
+
+        <button
+          type="button"
           class="btn btn-secondary w-full"
           (click)="captureEyeLevelSpawn()">
           👁️ تعيين موضع البداية الحالي
@@ -233,30 +240,30 @@
           <div class="add-hotspot-form">
             <div class="form-group">
               <label for="targetRoomSelect" class="input-label">الغرفة الهدف:</label>
-              <select 
+              <select
                 id="targetRoomSelect"
-                class="input-control select-control" 
-                [ngModel]="hotspotTargetRoomId()" 
+                class="input-control select-control"
+                [ngModel]="hotspotTargetRoomId()"
                 (ngModelChange)="hotspotTargetRoomId.set($event)">
                 @for (room of otherRooms(); track room.roomId) {
-                  <option [value]="room.roomId">{{ room.roomName }}</option>
+                  <option [value]="room.roomId">{{ room.roomLabel }}</option>
                 }
               </select>
             </div>
 
             <div class="form-group">
               <label for="hotspotTitleInput" class="input-label">عنوان النقطة:</label>
-              <input 
+              <input
                 id="hotspotTitleInput"
-                type="text" 
-                class="input-control" 
-                placeholder="مثال: الذهاب إلى المطبخ" 
-                [ngModel]="hotspotTitle()" 
+                type="text"
+                class="input-control"
+                placeholder="مثال: الذهاب إلى المطبخ"
+                [ngModel]="hotspotTitle()"
                 (ngModelChange)="hotspotTitle.set($event)" />
             </div>
 
-            <button 
-              type="button" 
+            <button
+              type="button"
               class="btn btn-outline w-full"
               [class.active-pick]="isPlacingHotspot()"
               (click)="isPlacingHotspot() ? cancelHotspotPlacement() : startHotspotPlacement()">
@@ -271,7 +278,6 @@
           <div class="empty-state">لا توجد غرف إضافية للربط معها</div>
         }
 
-        <!-- Hotspots list in current room -->
         <div class="hotspots-list">
           <h4 class="list-title">النقاط في الغرفة الحالية ({{ currentRoomHotspots().length }}):</h4>
           @for (hs of currentRoomHotspots(); track hs.id) {

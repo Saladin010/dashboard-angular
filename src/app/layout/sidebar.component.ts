@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core';
+import { Component, inject, input, output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { I18nService } from '../core/services/i18n.service';
@@ -9,7 +9,10 @@ import { AuthService } from '../core/services/auth.service';
   standalone: true,
   imports: [CommonModule, RouterModule],
   template: `
-    <aside class="sidebar">
+    @if (mobileOpen()) {
+      <div class="sidebar-overlay" (click)="closeMenu.emit()"></div>
+    }
+    <aside class="sidebar" [class.mobile-open]="mobileOpen()">
       <div class="sidebar-header">
         <div class="brand">
           <div class="brand-icon">3D</div>
@@ -18,51 +21,57 @@ import { AuthService } from '../core/services/auth.service';
             <span>{{ i18n.t('app.subtitle') }}</span>
           </div>
         </div>
+        <button type="button" class="mobile-close-btn" (click)="closeMenu.emit()">✕</button>
       </div>
 
       <nav class="sidebar-nav">
-        <a 
-          routerLink="/dashboard" 
-          routerLinkActive="active" 
+        <a
+          routerLink="/dashboard"
+          routerLinkActive="active"
           [routerLinkActiveOptions]="{ exact: true }"
           class="nav-link"
+          (click)="closeMenu.emit()"
         >
           <span class="nav-item-icon">📊</span>
           <span class="nav-item-label">{{ i18n.t('app.dashboard') }}</span>
         </a>
 
-        <a 
-          routerLink="/properties" 
-          routerLinkActive="active" 
+        <a
+          routerLink="/properties"
+          routerLinkActive="active"
           class="nav-link"
+          (click)="closeMenu.emit()"
         >
           <span class="nav-item-icon">🏢</span>
           <span class="nav-item-label">{{ i18n.t('app.properties') }}</span>
         </a>
 
-        <a 
-          routerLink="/scans" 
-          routerLinkActive="active" 
+        <a
+          routerLink="/scans"
+          routerLinkActive="active"
           class="nav-link"
+          (click)="closeMenu.emit()"
         >
           <span class="nav-item-icon">📸</span>
           <span class="nav-item-label">{{ i18n.t('app.scans') }}</span>
         </a>
 
-        <a 
-          routerLink="/studio" 
-          routerLinkActive="active" 
+        <a
+          routerLink="/studio"
+          routerLinkActive="active"
           class="nav-link"
+          (click)="closeMenu.emit()"
         >
           <span class="nav-item-icon">🎮</span>
-          <span class="nav-item-label">استوديو 3D</span>
+          <span class="nav-item-label">{{ i18n.t('scans.studio') }}</span>
         </a>
 
         @if (authService.isAdmin()) {
-          <a 
-            routerLink="/agents" 
-            routerLinkActive="active" 
+          <a
+            routerLink="/agents"
+            routerLinkActive="active"
             class="nav-link"
+            (click)="closeMenu.emit()"
           >
             <span class="nav-item-icon">👥</span>
             <span class="nav-item-label">{{ i18n.t('app.users') }}</span>
@@ -84,11 +93,11 @@ import { AuthService } from '../core/services/auth.service';
         </div>
 
         <div class="footer-actions">
-          <button class="btn-lang" (click)="i18n.toggleLanguage()">
+          <button type="button" class="btn-lang" (click)="i18n.toggleLanguage()">
             🌐 {{ i18n.currentLang() === 'ar' ? 'English' : 'العربية' }}
           </button>
-          
-          <button class="btn-logout" (click)="logout()" [title]="i18n.t('app.logout')">
+
+          <button type="button" class="btn-logout" (click)="logout()" [title]="i18n.t('app.logout')">
             🚪
           </button>
         </div>
@@ -96,20 +105,33 @@ import { AuthService } from '../core/services/auth.service';
     </aside>
   `,
   styles: [`
+    .sidebar-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.65);
+      z-index: 900;
+    }
+
     .sidebar {
       width: 260px;
       height: 100vh;
       background-color: var(--bg-surface, #1e293b);
+      border-inline-end: 1px solid var(--border-color, #334155);
       display: flex;
       flex-direction: column;
       position: sticky;
       top: 0;
       user-select: none;
+      flex-shrink: 0;
     }
 
     .sidebar-header {
-      padding: 1.5rem 1.25rem;
+      padding: 1.25rem;
       border-bottom: 1px solid var(--border-color, #334155);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
 
       .brand {
         display: flex;
@@ -127,6 +149,7 @@ import { AuthService } from '../core/services/auth.service';
           justify-content: center;
           font-weight: 800;
           font-size: 1.125rem;
+          flex-shrink: 0;
         }
 
         .brand-text {
@@ -148,16 +171,25 @@ import { AuthService } from '../core/services/auth.service';
       }
     }
 
+    .mobile-close-btn {
+      display: none;
+      color: var(--text-muted, #94a3b8);
+      font-size: 1.1rem;
+      padding: 0.25rem 0.5rem;
+    }
+
     .sidebar-nav {
       flex: 1;
       padding: 1.25rem 0.75rem;
       display: flex;
       flex-direction: column;
       gap: 0.35rem;
+      overflow-y: auto;
 
       .nav-link {
         display: flex;
         align-items: center;
+        gap: 0.65rem;
         padding: 0.75rem 1rem;
         border-radius: 0.5rem;
         color: var(--text-muted, #94a3b8);
@@ -203,6 +235,7 @@ import { AuthService } from '../core/services/auth.service';
           font-weight: 700;
           font-size: 0.875rem;
           border: 1px solid #10b981;
+          flex-shrink: 0;
         }
 
         .user-details {
@@ -257,11 +290,29 @@ import { AuthService } from '../core/services/auth.service';
         }
       }
     }
+
+    @media (max-width: 768px) {
+      .sidebar-overlay { display: block; }
+      .mobile-close-btn { display: inline-flex; }
+      .sidebar {
+        position: fixed;
+        top: 0;
+        bottom: 0;
+        inset-inline-start: -280px;
+        z-index: 950;
+        transition: inset-inline-start 0.25s ease;
+        &.mobile-open {
+          inset-inline-start: 0;
+        }
+      }
+    }
   `]
 })
 export class SidebarComponent {
   readonly i18n = inject(I18nService);
   readonly authService = inject(AuthService);
+  readonly mobileOpen = input(false);
+  readonly closeMenu = output<void>();
 
   logout(): void {
     this.authService.logout().subscribe();

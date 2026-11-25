@@ -34,18 +34,18 @@ import { I18nService } from '../../core/services/i18n.service';
         </div>
 
         <div class="metric-card">
-          <div class="metric-icon">📸</div>
+          <div class="metric-icon">✅</div>
           <div class="metric-info">
-            <span class="metric-label">جلسات المسح 3D</span>
-            <span class="metric-value">{{ activeScans() }}</span>
+            <span class="metric-label">العقارات النشطة</span>
+            <span class="metric-value">{{ activeProperties() }}</span>
           </div>
         </div>
 
         <div class="metric-card">
-          <div class="metric-icon">🌐</div>
+          <div class="metric-icon">📝</div>
           <div class="metric-info">
-            <span class="metric-label">الجولات المنشورة</span>
-            <span class="metric-value">{{ publishedTours() }}</span>
+            <span class="metric-label">مسودات قيد التجهيز</span>
+            <span class="metric-value">{{ draftProperties() }}</span>
           </div>
         </div>
 
@@ -66,8 +66,9 @@ import { I18nService } from '../../core/services/i18n.service';
           <div class="quick-links">
             <a routerLink="/properties" class="btn btn-secondary">إدارة عقارات المنصة (CRM)</a>
             <a routerLink="/scans" class="btn btn-secondary">مراقبة معالجة الـ 3D وتوليد توكن Kaggle</a>
+            <a routerLink="/studio" class="btn btn-secondary">استوديو التحرير ثلاثي الأبعاد 3D</a>
             @if (authService.isAdmin()) {
-              <a routerLink="/users" class="btn btn-secondary">إدارة المستخدمين وحسابات الوكلاء</a>
+              <a routerLink="/agents" class="btn btn-secondary">إدارة المستخدمين وحسابات الوكلاء</a>
             }
           </div>
         </div>
@@ -85,6 +86,8 @@ import { I18nService } from '../../core/services/i18n.service';
       display: flex;
       align-items: center;
       justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 1rem;
 
       h1 {
         font-size: 1.5rem;
@@ -156,14 +159,22 @@ export class DashboardHomeComponent implements OnInit {
   readonly i18n = inject(I18nService);
 
   readonly totalProperties = signal(0);
-  readonly activeScans = signal(0);
-  readonly publishedTours = signal(0);
+  readonly activeProperties = signal(0);
+  readonly draftProperties = signal(0);
 
   ngOnInit(): void {
     this.propertiesService.getProperties({ pageSize: 1 }).subscribe({
-      next: (res) => {
-        this.totalProperties.set(res.totalCount);
-      },
+      next: (res) => this.totalProperties.set(res.totalCount),
+      error: () => {}
+    });
+
+    this.propertiesService.getProperties({ status: 'Active', pageSize: 1 }).subscribe({
+      next: (res) => this.activeProperties.set(res.totalCount),
+      error: () => {}
+    });
+
+    this.propertiesService.getProperties({ status: 'Draft', pageSize: 1 }).subscribe({
+      next: (res) => this.draftProperties.set(res.totalCount),
       error: () => {}
     });
   }

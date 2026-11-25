@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core';
+import { Component, inject, output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { I18nService } from '../core/services/i18n.service';
 import { AuthService } from '../core/services/auth.service';
@@ -10,13 +10,18 @@ import { AuthService } from '../core/services/auth.service';
   template: `
     <header class="top-header">
       <div class="header-content">
-        <div class="system-status">
-          <span class="status-pulse"></span>
-          <span class="status-text">.NET 10 API Connected</span>
+        <div class="header-left">
+          <button type="button" class="menu-toggle-btn" (click)="menuToggle.emit()" aria-label="Toggle Menu">
+            ☰
+          </button>
+          <div class="system-status">
+            <span class="status-pulse"></span>
+            <span class="status-text">RealEstate3D API Live</span>
+          </div>
         </div>
 
         <div class="header-right">
-          <button class="lang-toggle-btn" (click)="i18n.toggleLanguage()">
+          <button type="button" class="lang-toggle-btn" (click)="i18n.toggleLanguage()">
             {{ i18n.currentLang() === 'ar' ? 'English' : 'العربية' }}
           </button>
 
@@ -33,7 +38,7 @@ import { AuthService } from '../core/services/auth.service';
       height: 64px;
       background-color: var(--bg-surface, #1e293b);
       border-bottom: 1px solid var(--border-color, #334155);
-      padding: 0 1.5rem;
+      padding: 0 1.25rem;
       display: flex;
       align-items: center;
     }
@@ -43,6 +48,26 @@ import { AuthService } from '../core/services/auth.service';
       display: flex;
       align-items: center;
       justify-content: space-between;
+      gap: 0.75rem;
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .menu-toggle-btn {
+      display: none;
+      width: 36px;
+      height: 36px;
+      border-radius: 0.45rem;
+      border: 1px solid #334155;
+      background: #0f172a;
+      color: var(--text-main, #f8fafc);
+      font-size: 1.1rem;
+      align-items: center;
+      justify-content: center;
     }
 
     .system-status {
@@ -65,7 +90,7 @@ import { AuthService } from '../core/services/auth.service';
     .header-right {
       display: flex;
       align-items: center;
-      gap: 1rem;
+      gap: 0.75rem;
 
       .lang-toggle-btn {
         padding: 0.35rem 0.75rem;
@@ -102,9 +127,15 @@ import { AuthService } from '../core/services/auth.service';
         }
       }
     }
+
+    @media (max-width: 768px) {
+      .menu-toggle-btn { display: inline-flex; }
+      .user-email, .status-text { display: none; }
+    }
   `]
 })
 export class HeaderComponent {
   readonly i18n = inject(I18nService);
   readonly authService = inject(AuthService);
+  readonly menuToggle = output<void>();
 }

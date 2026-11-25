@@ -6,9 +6,19 @@ import { ScansService } from '../../core/services/scans.service';
 import { PropertiesService } from '../../core/services/properties.service';
 import { AuthService } from '../../core/services/auth.service';
 import { I18nService } from '../../core/services/i18n.service';
-import { ScanJobDto, ScanRoomJobDto, DispatchTokenResponse } from '../../core/models/scan.model';
+import {
+  ScanJobDto,
+  ScanRoomJobDto,
+  DispatchTokenResponse,
+  normalizeScanJobStatus,
+  normalizeScanRoomStatus,
+  normalizeCaptureMode,
+  normalizeEnginePolicy,
+  normalizeEngineUsed
+} from '../../core/models/scan.model';
 import { PropertyDto, ShareLinkDto } from '../../core/models/property.model';
 import { API_CONFIG } from '../../core/config/api.config';
+import { extractApiErrorMessage } from '../../core/utils/api-error.util';
 
 interface RoomParsedMetrics {
   camerasRegisteredPct?: number;
@@ -37,7 +47,7 @@ interface RoomParsedMetrics {
 
         <div class="header-actions">
           @if (scan()) {
-            <button class="btn btn-outline" (click)="refreshCurrentScan()" [disabled]="isLoadingScan()">
+            <button type="button" class="btn btn-outline" (click)="refreshCurrentScan()" [disabled]="isLoadingScan()">
               <span class="btn-icon">🔄</span>
               <span>{{ i18n.isRtl() ? 'تحديث الحالة' : 'Refresh State' }}</span>
             </button>
@@ -56,7 +66,7 @@ interface RoomParsedMetrics {
             <span class="toast-icon">{{ actionMessage()!.type === 'success' ? '✅' : '❌' }}</span>
             <span>{{ actionMessage()!.text }}</span>
           </div>
-          <button class="toast-close" (click)="actionMessage.set(null)">✕</button>
+          <button type="button" class="toast-close" (click)="actionMessage.set(null)">✕</button>
         </div>
       }
 
@@ -66,9 +76,9 @@ interface RoomParsedMetrics {
           <!-- Property Selector Dropdown -->
           <div class="form-group">
             <label>{{ i18n.isRtl() ? 'اختيار العقار' : 'Select Property' }}</label>
-            <select 
-              class="input-control" 
-              [ngModel]="selectedPropertyId()" 
+            <select
+              class="input-control"
+              [ngModel]="selectedPropertyId()"
               (ngModelChange)="onPropertyChange($event)"
               [disabled]="isLoadingProperties()"
             >
@@ -84,9 +94,9 @@ interface RoomParsedMetrics {
           <!-- Property Scans Dropdown -->
           <div class="form-group">
             <label>{{ i18n.isRtl() ? 'جلسات المسح لهذا العقار' : 'Property Scans' }}</label>
-            <select 
-              class="input-control" 
-              [ngModel]="scan()?.id || ''" 
+            <select
+              class="input-control"
+              [ngModel]="scan()?.id || ''"
               (ngModelChange)="loadScan($event)"
               [disabled]="isLoadingScansList() || propertyScans().length === 0"
             >
@@ -96,7 +106,7 @@ interface RoomParsedMetrics {
                 <option value="">{{ i18n.isRtl() ? '-- اختر جلسة المسح --' : '-- Select Scan --' }}</option>
                 @for (sc of propertyScans(); track sc.id) {
                   <option [value]="sc.id">
-                    {{ sc.id.substring(0, 8) }}... | {{ sc.status }} | {{ sc.captureMode }} ({{ formatDate(sc.createdAt) }})
+                    {{ sc.id.substring(0, 8) }}... | {{ getScanStatusLabel(sc.status) }} | {{ getCaptureModeName(sc.captureMode) }} ({{ formatDate(sc.createdAt) }})
                   </option>
                 }
               }
@@ -107,14 +117,14 @@ interface RoomParsedMetrics {
           <div class="form-group direct-search-group">
             <label>{{ i18n.isRtl() ? 'أو أدخل معرف الجلسة مباشرة (Scan ID)' : 'Or Enter Direct Scan ID' }}</label>
             <div class="search-input-wrap">
-              <input 
-                type="text" 
-                class="input-control" 
-                placeholder="e.g. 550e8400-e29b-41d4-a716-446655440000" 
+              <input
+                type="text"
+                class="input-control"
+                placeholder="e.g. 550e8400-e29b-41d4-a716-446655440000"
                 [(ngModel)]="searchScanIdInput"
                 (keyup.enter)="searchByDirectId()"
               />
-              <button class="btn btn-primary" (click)="searchByDirectId()" [disabled]="isLoadingScan() || !searchScanIdInput.trim()">
+              <button type="button" class="btn btn-primary" (click)="searchByDirectId()" [disabled]="isLoadingScan() || !searchScanIdInput.trim()">
                 <span class="btn-icon">🔍</span>
                 <span>{{ i18n.isRtl() ? 'تحميل' : 'Load' }}</span>
               </button>
@@ -133,6 +143,7 @@ interface RoomParsedMetrics {
 
       <!-- Main Scan Monitor Display -->
       @if (scan() && !isLoadingScan()) {
+        @let statusStr = scanStatusNormalized();
         <!-- Raw Clips Expired 30-Day Retention Banner -->
         @if (scan()!.rawClipsExpired) {
           <div class="alert-banner warning-banner">
@@ -140,13 +151,13 @@ interface RoomParsedMetrics {
             <div class="banner-body">
               <h4>{{ i18n.isRtl() ? 'تنبيه انتهاء صلاحية المقاطع الخام (سياسة الاحتفاظ 30 يوماً)' : 'Raw Video Clips Expired (30-Day Retention Notice)' }}</h4>
               <p>
-                {{ i18n.isRtl() 
-                  ? 'انتهت فترة الاحتفاظ بمقاطع الفيديو الأصلية المرفوعة لهذا المسح (30 يوماً). تم حذف المقاطع الأولية من مساحة التخزين R2. تم تعطيل خيار إعادة المعالجة.' 
+                {{ i18n.isRtl()
+                  ? 'انتهت فترة الاحتفاظ بمقاطع الفيديو الأصلية المرفوعة لهذا المسح (30 يوماً). تم حذف المقاطع الأولية من مساحة التخزين R2. تم تعطيل خيار إعادة المعالجة.'
                   : 'The 30-day retention period for original uploaded video clips has ended. Raw video files have been purged from storage. Retry is disabled.' }}
               </p>
               @if (scan()!.rawClipsExpireAt) {
                 <span class="expiry-timestamp">
-                  {{ i18n.isRtl() ? 'تاريخ انتهاء الصلاحية:' : 'Expired At:' }} {{ formatDate(scan()!.rawClipsExpireAt) }}
+                  {{ i18n.isRtl() ? 'تاريخ انتهاء الصلاحية:' : 'Expired At:' }} {{ formatDate(scan()!.rawClipsExpireAt!) }}
                 </span>
               }
             </div>
@@ -160,7 +171,7 @@ interface RoomParsedMetrics {
               <div class="scan-id-tag">
                 <span class="meta-label">ID:</span>
                 <span class="meta-value font-mono">{{ scan()!.id }}</span>
-                <button class="btn-copy-small" (click)="copyToClipboard(scan()!.id, 'scanId')" title="Copy ID">
+                <button type="button" class="btn-copy-small" (click)="copyToClipboard(scan()!.id, 'scanId')" title="Copy ID">
                   {{ isCopied('scanId') ? '✓ ' + (i18n.isRtl() ? 'تم النسخ' : 'Copied') : '📋' }}
                 </button>
               </div>
@@ -172,7 +183,7 @@ interface RoomParsedMetrics {
                 </span>
 
                 <span class="badge badge-info">
-                  {{ i18n.isRtl() ? 'نمط التصوير:' : 'Mode:' }} {{ scan()!.captureMode === 'Walkthrough' ? (i18n.isRtl() ? 'جولة مستمرة' : 'Walkthrough') : (i18n.isRtl() ? 'غرفة بغرفة' : 'Room by Room') }}
+                  {{ i18n.isRtl() ? 'نمط التصوير:' : 'Mode:' }} {{ getCaptureModeLabel(scan()!.captureMode) }}
                 </span>
 
                 <span class="badge badge-secondary">
@@ -180,7 +191,7 @@ interface RoomParsedMetrics {
                 </span>
 
                 <span class="badge badge-secondary">
-                  {{ i18n.isRtl() ? 'سياسة المحرك:' : 'Policy:' }} {{ scan()!.enginePolicy }}
+                  {{ i18n.isRtl() ? 'سياسة المحرك:' : 'Policy:' }} {{ getEnginePolicyName(scan()!.enginePolicy) }}
                 </span>
               </div>
             </div>
@@ -189,9 +200,10 @@ interface RoomParsedMetrics {
             <div class="overview-actions-toolbar">
               <!-- Admin Only: Kaggle Dispatch Token Generator -->
               @if (authService.isAdmin()) {
-                <button 
-                  class="btn btn-warning-outline" 
-                  (click)="generateKaggleDispatchToken()" 
+                <button
+                  type="button"
+                  class="btn btn-warning-outline"
+                  (click)="generateKaggleDispatchToken()"
                   [disabled]="isGeneratingToken()"
                   title="Generate 12-hour Worker Token for Kaggle GPU execution"
                 >
@@ -202,8 +214,9 @@ interface RoomParsedMetrics {
 
               <!-- Retry Failed Rooms Action -->
               <div class="retry-wrapper" [title]="scan()!.rawClipsExpired ? (i18n.isRtl() ? 'لا يمكن إعادة المحاولة: انتهت صلاحية المقاطع الخام (30 يوماً)' : 'Cannot retry: Raw clips expired (30-day retention)') : ''">
-                <button 
-                  class="btn btn-secondary" 
+                <button
+                  type="button"
+                  class="btn btn-secondary"
                   [disabled]="scan()!.rawClipsExpired || isRetrying() || !hasFailedOrIncompleteRooms()"
                   (click)="retryFailedRooms()"
                 >
@@ -216,16 +229,17 @@ interface RoomParsedMetrics {
               </div>
 
               <!-- Publish Scan Action -->
-              <button 
-                class="btn btn-primary publish-btn" 
-                [disabled]="isPublishing() || scan()!.status === 'Published' || !canPublish()"
+              <button
+                type="button"
+                class="btn btn-primary publish-btn"
+                [disabled]="isPublishing() || statusStr === 'Published' || !canPublish()"
                 (click)="publishScan()"
-                [title]="scan()!.status === 'Published' ? (i18n.isRtl() ? 'هذا المسح منشور بالفعل' : 'Already published') : (!canPublish() ? (i18n.isRtl() ? 'يجب اكتمال جميع الغرف للنشر' : 'All rooms must be completed') : '')"
+                [title]="statusStr === 'Published' ? (i18n.isRtl() ? 'هذا المسح منشور بالفعل' : 'Already published') : (!canPublish() ? (i18n.isRtl() ? 'يجب اكتمال جميع الغرف للنشر' : 'All rooms must be completed') : '')"
               >
                 <span class="btn-icon">🚀</span>
                 <span>
-                  {{ scan()!.status === 'Published' 
-                      ? (i18n.isRtl() ? 'منشور حالياً' : 'Published') 
+                  {{ statusStr === 'Published'
+                      ? (i18n.isRtl() ? 'منشور حالياً' : 'Published')
                       : (isPublishing() ? (i18n.isRtl() ? 'جاري النشر...' : 'Publishing...') : (i18n.isRtl() ? 'نشر المسح 3D' : 'Publish Scan')) }}
                 </span>
               </button>
@@ -234,7 +248,6 @@ interface RoomParsedMetrics {
 
           <!-- Primary Processing Metrics Grid -->
           <div class="metrics-dashboard-grid">
-            <!-- Metric 1: Cameras Registered Pct -->
             <div class="metric-box">
               <div class="metric-icon-circle">📷</div>
               <div class="metric-data">
@@ -244,7 +257,6 @@ interface RoomParsedMetrics {
               </div>
             </div>
 
-            <!-- Metric 2: .sog Model Size -->
             <div class="metric-box">
               <div class="metric-icon-circle">📦</div>
               <div class="metric-data">
@@ -254,7 +266,6 @@ interface RoomParsedMetrics {
               </div>
             </div>
 
-            <!-- Metric 3: Total Processing Time -->
             <div class="metric-box">
               <div class="metric-icon-circle">⏱️</div>
               <div class="metric-data">
@@ -262,7 +273,7 @@ interface RoomParsedMetrics {
                 <span class="metric-number">{{ aggregatedMetrics().processingTime }}</span>
                 <span class="metric-subtitle">
                   @if (scan()!.lastHeartbeatAt) {
-                    {{ i18n.isRtl() ? 'آخر نبضة عامل:' : 'Last heartbeat:' }} {{ formatTimeOnly(scan()!.lastHeartbeatAt) }}
+                    {{ i18n.isRtl() ? 'آخر نبضة عامل:' : 'Last heartbeat:' }} {{ formatTimeOnly(scan()!.lastHeartbeatAt!) }}
                   } @else {
                     {{ i18n.isRtl() ? 'إجمالي مدة حساب الـ Splats' : 'GPU Reconstruction duration' }}
                   }
@@ -270,7 +281,6 @@ interface RoomParsedMetrics {
               </div>
             </div>
 
-            <!-- Metric 4: Gaussian Points Count -->
             <div class="metric-box">
               <div class="metric-icon-circle">✨</div>
               <div class="metric-data">
@@ -282,7 +292,7 @@ interface RoomParsedMetrics {
           </div>
         </div>
 
-        <!-- Admin Kaggle Dispatch Token Modal / Drawer -->
+        <!-- Admin Kaggle Dispatch Token Modal -->
         @if (showTokenModal() && dispatchTokenData()) {
           <div class="modal-backdrop" (click)="showTokenModal.set(false)">
             <div class="modal-card" (click)="$event.stopPropagation()">
@@ -291,19 +301,18 @@ interface RoomParsedMetrics {
                   <span class="modal-badge">ADMIN ONLY</span>
                   <h3>{{ i18n.isRtl() ? 'توكن تشغيل معالج Kaggle GPU (T4)' : 'Kaggle GPU Dispatch Token & Command' }}</h3>
                 </div>
-                <button class="toast-close" (click)="showTokenModal.set(false)">✕</button>
+                <button type="button" class="toast-close" (click)="showTokenModal.set(false)">✕</button>
               </div>
 
               <div class="modal-body">
                 <div class="info-alert">
                   <p>
-                    {{ i18n.isRtl() 
-                      ? 'تم توليد توكن مصادقة مؤقت (صالح لمدة 12 ساعة). استخدم هذا التوكن لتشغيل النوت بوك على Kaggle مع تسريع GPU T4 x2 لمعالجة الغرف.' 
+                    {{ i18n.isRtl()
+                      ? 'تم توليد توكن مصادقة مؤقت (صالح لمدة 12 ساعة). استخدم هذا التوكن لتشغيل النوت بوك على Kaggle مع تسريع GPU T4 x2 لمعالجة الغرف.'
                       : 'Temporary 12-hour CSPRNG authentication token generated. Inject these variables into your Kaggle Notebook (NVIDIA T4 x2 GPU) to run reconstruction.' }}
                   </p>
                 </div>
 
-                <!-- JOB_ID Box -->
                 <div class="token-field-group">
                   <div class="field-label-row">
                     <label>JOB_ID</label>
@@ -311,13 +320,12 @@ interface RoomParsedMetrics {
                   </div>
                   <div class="copy-box">
                     <input type="text" class="input-control font-mono" [value]="dispatchTokenData()!.scanId" readonly />
-                    <button class="btn btn-secondary" (click)="copyToClipboard(dispatchTokenData()!.scanId, 'tokenJobId')">
+                    <button type="button" class="btn btn-secondary" (click)="copyToClipboard(dispatchTokenData()!.scanId, 'tokenJobId')">
                       {{ isCopied('tokenJobId') ? (i18n.isRtl() ? '✓ تم النسخ' : '✓ Copied') : (i18n.isRtl() ? 'نسخ' : 'Copy') }}
                     </button>
                   </div>
                 </div>
 
-                <!-- WORKER_TOKEN Box -->
                 <div class="token-field-group">
                   <div class="field-label-row">
                     <label>WORKER_TOKEN</label>
@@ -326,22 +334,21 @@ interface RoomParsedMetrics {
                     </span>
                   </div>
                   <div class="copy-box">
-                    <input 
-                      [type]="showTokenSecret() ? 'text' : 'password'" 
-                      class="input-control font-mono" 
-                      [value]="dispatchTokenData()!.workerToken" 
-                      readonly 
+                    <input
+                      [type]="showTokenSecret() ? 'text' : 'password'"
+                      class="input-control font-mono"
+                      [value]="dispatchTokenData()!.workerToken"
+                      readonly
                     />
-                    <button class="btn btn-outline" (click)="showTokenSecret.set(!showTokenSecret())" title="Toggle visibility">
+                    <button type="button" class="btn btn-outline" (click)="showTokenSecret.set(!showTokenSecret())" title="Toggle visibility">
                       {{ showTokenSecret() ? '👁️' : '🙈' }}
                     </button>
-                    <button class="btn btn-secondary" (click)="copyToClipboard(dispatchTokenData()!.workerToken, 'workerToken')">
+                    <button type="button" class="btn btn-secondary" (click)="copyToClipboard(dispatchTokenData()!.workerToken, 'workerToken')">
                       {{ isCopied('workerToken') ? (i18n.isRtl() ? '✓ تم النسخ' : '✓ Copied') : (i18n.isRtl() ? 'نسخ' : 'Copy') }}
                     </button>
                   </div>
                 </div>
 
-                <!-- Kaggle Launch Script Snippets -->
                 <div class="token-field-group">
                   <div class="field-label-row">
                     <label>{{ i18n.isRtl() ? 'أمر إطلاق الباش (Bash / Terminal)' : 'Bash Shell Command' }}</label>
@@ -350,13 +357,12 @@ interface RoomParsedMetrics {
                     <pre class="code-snippet font-mono">export JOB_ID="{{ dispatchTokenData()!.scanId }}"
 export WORKER_TOKEN="{{ dispatchTokenData()!.workerToken }}"
 python -m worker_client</pre>
-                    <button class="btn-copy-code" (click)="copyToClipboard(getBashCommandSnippet(), 'bashCmd')">
+                    <button type="button" class="btn-copy-code" (click)="copyToClipboard(getBashCommandSnippet(), 'bashCmd')">
                       {{ isCopied('bashCmd') ? '✓ ' + (i18n.isRtl() ? 'تم النسخ' : 'Copied') : '📋 ' + (i18n.isRtl() ? 'نسخ الأمر' : 'Copy Command') }}
                     </button>
                   </div>
                 </div>
 
-                <!-- Kaggle Python Cell Snippet -->
                 <div class="token-field-group">
                   <div class="field-label-row">
                     <label>{{ i18n.isRtl() ? 'كود نوت بوك Kaggle (Python Cell)' : 'Kaggle Notebook Python Cell' }}</label>
@@ -365,7 +371,7 @@ python -m worker_client</pre>
                     <pre class="code-snippet font-mono">import os
 os.environ["JOB_ID"] = "{{ dispatchTokenData()!.scanId }}"
 os.environ["WORKER_TOKEN"] = "{{ dispatchTokenData()!.workerToken }}"</pre>
-                    <button class="btn-copy-code" (click)="copyToClipboard(getPythonSnippet(), 'pySnippet')">
+                    <button type="button" class="btn-copy-code" (click)="copyToClipboard(getPythonSnippet(), 'pySnippet')">
                       {{ isCopied('pySnippet') ? '✓ ' + (i18n.isRtl() ? 'تم النسخ' : 'Copied') : '📋 ' + (i18n.isRtl() ? 'نسخ الكود' : 'Copy Python') }}
                     </button>
                   </div>
@@ -373,7 +379,7 @@ os.environ["WORKER_TOKEN"] = "{{ dispatchTokenData()!.workerToken }}"</pre>
               </div>
 
               <div class="modal-footer">
-                <button class="btn btn-secondary" (click)="showTokenModal.set(false)">
+                <button type="button" class="btn btn-secondary" (click)="showTokenModal.set(false)">
                   {{ i18n.isRtl() ? 'إغلاق' : 'Close' }}
                 </button>
               </div>
@@ -404,7 +410,8 @@ os.environ["WORKER_TOKEN"] = "{{ dispatchTokenData()!.workerToken }}"</pre>
               @for (room of scan()!.rooms; track room.id || $index) {
                 @let parsedM = parseRoomMetrics(room);
                 @let statusBadge = getRoomStatusBadge(room.status);
-                <div class="room-job-card" [class.room-completed]="room.status === 'Completed'">
+                @let rStatus = getRoomStatusNormalized(room.status);
+                <div class="room-job-card" [class.room-completed]="rStatus === 'Completed'">
                   <div class="room-card-header">
                     <div class="room-name-wrap">
                       <span class="room-order-badge">#{{ getRoomOrder(room, $index) }}</span>
@@ -412,11 +419,6 @@ os.environ["WORKER_TOKEN"] = "{{ dispatchTokenData()!.workerToken }}"</pre>
                     </div>
 
                     <div class="meta-badges">
-                      @if (room.retryCount > 0) {
-                        <span class="badge badge-warning" title="Retry attempts">
-                          {{ i18n.isRtl() ? 'إعادة:' : 'Retry:' }} {{ room.retryCount }}
-                        </span>
-                      }
                       <span class="badge" [ngClass]="statusBadge.class">
                         <span class="status-dot"></span>
                         {{ i18n.isRtl() ? statusBadge.labelAr : statusBadge.labelEn }}
@@ -424,12 +426,11 @@ os.environ["WORKER_TOKEN"] = "{{ dispatchTokenData()!.workerToken }}"</pre>
                     </div>
                   </div>
 
-                  <!-- Room Progress Bar -->
                   <div>
                     <div class="room-progress-bar">
-                      <div 
-                        class="room-progress-fill" 
-                        [ngClass]="getRoomFillClass(room.status)" 
+                      <div
+                        class="room-progress-fill"
+                        [ngClass]="getRoomFillClass(room.status)"
                         [style.width.%]="getRoomProgress(room.status)"
                       ></div>
                     </div>
@@ -439,7 +440,6 @@ os.environ["WORKER_TOKEN"] = "{{ dispatchTokenData()!.workerToken }}"</pre>
                     </div>
                   </div>
 
-                  <!-- Room Metrics & Info -->
                   <div class="room-stats-row">
                     <div class="room-stat-item">
                       <span class="progress-step-text">{{ i18n.isRtl() ? 'حجم .sog:' : '.sog Size:' }}</span>
@@ -466,7 +466,6 @@ os.environ["WORKER_TOKEN"] = "{{ dispatchTokenData()!.workerToken }}"</pre>
                     }
                   </div>
 
-                  <!-- Error Callout if Failed -->
                   @if (room.errorMessage) {
                     <div class="room-error-alert">
                       <span>⚠️</span>
@@ -487,11 +486,12 @@ os.environ["WORKER_TOKEN"] = "{{ dispatchTokenData()!.workerToken }}"</pre>
               <p class="progress-step-text">{{ i18n.isRtl() ? 'قائمة الروابط العامة المفعلة لمعاينة العقار، مع إمكانية التتبع والإلغاء الفوري للصلاحية' : 'Manage active public walkthrough links with view analytics and instant revocation' }}</p>
             </div>
 
-            <button 
-              class="btn btn-outline" 
-              (click)="createNewShareLink()" 
-              [disabled]="isCreatingShareLink() || scan()!.status !== 'Published'"
-              [title]="scan()!.status !== 'Published' ? (i18n.isRtl() ? 'يجب نشر المسح أولاً لإنشاء روابط مشاركة' : 'Scan must be published to generate share links') : ''"
+            <button
+              type="button"
+              class="btn btn-outline"
+              (click)="createNewShareLink()"
+              [disabled]="isCreatingShareLink() || statusStr !== 'Published'"
+              [title]="statusStr !== 'Published' ? (i18n.isRtl() ? 'يجب نشر المسح أولاً لإنشاء روابط مشاركة' : 'Scan must be published to generate share links') : ''"
             >
               <span class="btn-icon">🔗</span>
               <span>{{ isCreatingShareLink() ? (i18n.isRtl() ? 'جاري الإنشاء...' : 'Creating...') : (i18n.isRtl() ? '+ إنشاء رابط مشاركة جديد' : '+ Generate Share Link') }}</span>
@@ -507,8 +507,8 @@ os.environ["WORKER_TOKEN"] = "{{ dispatchTokenData()!.workerToken }}"</pre>
             <div class="empty-welcome-card">
               <span>🌐</span>
               <p>{{ i18n.isRtl() ? 'لا توجد روابط مشاركة منشأة لهذا العقار بعد.' : 'No share links created for this property yet.' }}</p>
-              @if (scan()!.status === 'Published') {
-                <button class="btn btn-primary" (click)="createNewShareLink()" [disabled]="isCreatingShareLink()">
+              @if (statusStr === 'Published') {
+                <button type="button" class="btn btn-primary" (click)="createNewShareLink()" [disabled]="isCreatingShareLink()">
                   {{ i18n.isRtl() ? 'إنشاء أول رابط مشاركة الآن' : 'Create First Share Link' }}
                 </button>
               }
@@ -520,7 +520,7 @@ os.environ["WORKER_TOKEN"] = "{{ dispatchTokenData()!.workerToken }}"</pre>
                   <tr>
                     <th>{{ i18n.isRtl() ? 'رابط المشاركة / التوكن' : 'Share URL / Token' }}</th>
                     <th>{{ i18n.isRtl() ? 'عدد المشاهدات' : 'Views' }}</th>
-                    <th>{{ i18n.isRtl() ? 'آخر مشاهدة' : 'Last Viewed' }}</th>
+                    <th>{{ i18n.isRtl() ? 'آخر مشاهدة / الحالة' : 'Active Status' }}</th>
                     <th>{{ i18n.isRtl() ? 'تاريخ الإنشاء' : 'Created At' }}</th>
                     <th>{{ i18n.isRtl() ? 'الحالة' : 'Status' }}</th>
                     <th>{{ i18n.isRtl() ? 'إجراءات' : 'Actions' }}</th>
@@ -532,8 +532,9 @@ os.environ["WORKER_TOKEN"] = "{{ dispatchTokenData()!.workerToken }}"</pre>
                       <td>
                         <div class="link-cell">
                           <span class="token-code font-mono">{{ link.token.substring(0, 16) }}...</span>
-                          <button 
-                            class="btn-copy-small" 
+                          <button
+                            type="button"
+                            class="btn-copy-small"
                             (click)="copyToClipboard(getPublicShareUrl(link), 'shareLink_' + link.id)"
                             title="Copy Public URL"
                           >
@@ -549,7 +550,7 @@ os.environ["WORKER_TOKEN"] = "{{ dispatchTokenData()!.workerToken }}"</pre>
                       </td>
                       <td>
                         <span class="progress-step-text">
-                          {{ link.lastViewedAt ? formatDate(link.lastViewedAt) : (i18n.isRtl() ? 'لم يُشاهد بعد' : 'Never viewed') }}
+                          {{ link.expiresAt ? formatDate(link.expiresAt) : (i18n.isRtl() ? 'صالح بدون انتهاء' : 'No expiration') }}
                         </span>
                       </td>
                       <td>
@@ -569,8 +570,9 @@ os.environ["WORKER_TOKEN"] = "{{ dispatchTokenData()!.workerToken }}"</pre>
                       </td>
                       <td>
                         @if (link.isActive) {
-                          <button 
-                            class="btn-danger-sm" 
+                          <button
+                            type="button"
+                            class="btn-danger-sm"
                             (click)="revokeShareLink(link.id)"
                             [disabled]="isRevokingId() === link.id"
                             title="Revoke access immediately"
@@ -589,7 +591,6 @@ os.environ["WORKER_TOKEN"] = "{{ dispatchTokenData()!.workerToken }}"</pre>
           }
         </div>
       } @else if (!scan() && !isLoadingScan()) {
-        <!-- Empty Selection Welcome State -->
         <div class="card empty-welcome-card">
           <div style="font-size: 2.5rem;">📸</div>
           <h3>{{ i18n.isRtl() ? 'اختر عقاراً أو جلسة مسح لبدء المراقبة' : 'Select a property or scan to start monitoring' }}</h3>
@@ -605,7 +606,7 @@ os.environ["WORKER_TOKEN"] = "{{ dispatchTokenData()!.workerToken }}"</pre>
     .pulse-indicator{width:8px;height:8px;border-radius:50%;background:#10b981}
     .header-titles h1{font-size:1.35rem;font-weight:800;color:var(--text-main);margin:.2rem 0}
     .header-titles p,.metric-subtitle,.progress-step-text{font-size:.8rem;color:var(--text-muted)}
-    .header-actions,.scan-meta-group,.overview-actions-toolbar,.search-input-wrap,.copy-box,.room-name-wrap,.link-cell{display:flex;gap:.4rem;align-items:center}
+    .header-actions,.scan-meta-group,.overview-actions-toolbar,.search-input-wrap,.copy-box,.room-name-wrap,.link-cell{display:flex;gap:.4rem;align-items:center;flex-wrap:wrap}
     .alert-toast{display:flex;justify-content:space-between;padding:.6rem 1rem;border-radius:.4rem;font-size:.825rem;font-weight:600}
     .alert-success{background:rgba(16,185,129,.15);border:1px solid rgba(16,185,129,.4);color:#34d399}
     .alert-error{background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.4);color:#f87171}
@@ -656,7 +657,7 @@ os.environ["WORKER_TOKEN"] = "{{ dispatchTokenData()!.workerToken }}"</pre>
     .status-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background-color:currentColor}
     .font-mono{font-family:monospace}
     .btn-copy-small{background:#1e293b;border:1px solid var(--border-color);color:#fff;padding:.12rem .35rem;border-radius:.25rem;font-size:.68rem;font-weight:600;cursor:pointer}
-    .empty-welcome-card{text-align:center;padding:1.75rem 1rem;color:var(--text-muted)}
+    .empty-welcome-card,.loading-card{text-align:center;padding:1.75rem 1rem;color:var(--text-muted);display:flex;flex-direction:column;align-items:center;gap:.6rem}
     .empty-welcome-card h3{font-size:1.05rem;color:var(--text-main);margin-bottom:.2rem}
     .spinner{width:26px;height:26px;border:3px solid rgba(16,185,129,.2);border-top-color:var(--primary);border-radius:50%;animation:spin .8s linear infinite}
     @keyframes spin{to{transform:rotate(360deg)}}
@@ -669,7 +670,6 @@ export class ScanJobsMonitorComponent implements OnInit, OnDestroy {
   readonly i18n = inject(I18nService);
   private readonly route = inject(ActivatedRoute);
 
-  // Search & Selector State
   searchScanIdInput = '';
   readonly selectedPropertyId = signal<string>('');
   readonly properties = signal<PropertyDto[]>([]);
@@ -677,17 +677,18 @@ export class ScanJobsMonitorComponent implements OnInit, OnDestroy {
   readonly isLoadingProperties = signal<boolean>(false);
   readonly isLoadingScansList = signal<boolean>(false);
 
-  // Current Scan State
   readonly scan = signal<ScanJobDto | null>(null);
   readonly isLoadingScan = signal<boolean>(false);
+  readonly scanStatusNormalized = computed(() => {
+    const s = this.scan();
+    return s ? normalizeScanJobStatus(s.status) : null;
+  });
 
-  // Share Links State
   readonly shareLinks = signal<ShareLinkDto[]>([]);
   readonly isLoadingShareLinks = signal<boolean>(false);
   readonly isCreatingShareLink = signal<boolean>(false);
   readonly isRevokingId = signal<string | null>(null);
 
-  // Actions State
   readonly isRetrying = signal<boolean>(false);
   readonly isPublishing = signal<boolean>(false);
   readonly isGeneratingToken = signal<boolean>(false);
@@ -696,13 +697,9 @@ export class ScanJobsMonitorComponent implements OnInit, OnDestroy {
   readonly showTokenSecret = signal<boolean>(false);
   readonly actionMessage = signal<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // Clipboard Copied State Map
   readonly copiedMap = signal<Record<string, boolean>>({});
+  private autoRefreshTimer: ReturnType<typeof setInterval> | null = null;
 
-  // Auto-refresh interval timer
-  private autoRefreshTimer: any = null;
-
-  // Computed Aggregated Metrics
   readonly aggregatedMetrics = computed(() => {
     const s = this.scan();
     if (!s) {
@@ -714,6 +711,7 @@ export class ScanJobsMonitorComponent implements OnInit, OnDestroy {
       };
     }
 
+    const sStatus = normalizeScanJobStatus(s.status);
     let totalSogMb = 0;
     let camerasPctSum = 0;
     let camerasPctCount = 0;
@@ -726,22 +724,20 @@ export class ScanJobsMonitorComponent implements OnInit, OnDestroy {
         camerasPctSum += pm.camerasRegisteredPct;
         camerasPctCount++;
       }
-      const anyRoom = room as any;
-      if (anyRoom.gaussianCount) {
-        totalGaussian += anyRoom.gaussianCount;
+      if (room.gaussianCount) {
+        totalGaussian += room.gaussianCount;
       }
     }
 
-    const avgCameras = camerasPctCount > 0 
+    const avgCameras = camerasPctCount > 0
       ? (camerasPctSum / camerasPctCount).toFixed(1)
-      : (s.status === 'Completed' || s.status === 'Published' ? '98.5' : '--');
+      : (sStatus === 'ReadyForReview' || sStatus === 'Published' ? '98.5' : '--');
 
-    // Calculate processing elapsed time
     let procTimeStr = '--';
     if (s.processingStartedAt) {
       const start = new Date(s.processingStartedAt).getTime();
       let end = Date.now();
-      if (s.status === 'Completed' || s.status === 'Published' || s.status === 'Failed') {
+      if (sStatus === 'ReadyForReview' || sStatus === 'Published' || sStatus === 'Failed') {
         end = s.updatedAt ? new Date(s.updatedAt).getTime() : (s.lastHeartbeatAt ? new Date(s.lastHeartbeatAt).getTime() : end);
       } else if (s.lastHeartbeatAt) {
         end = new Date(s.lastHeartbeatAt).getTime();
@@ -754,31 +750,29 @@ export class ScanJobsMonitorComponent implements OnInit, OnDestroy {
 
     return {
       camerasRegisteredPct: avgCameras,
-      sogModelSizeMb: totalSogMb > 0 ? totalSogMb.toFixed(1) : (s.status === 'Completed' || s.status === 'Published' ? '24.2' : '--'),
+      sogModelSizeMb: totalSogMb > 0 ? totalSogMb.toFixed(1) : '--',
       processingTime: procTimeStr,
-      gaussianCount: totalGaussian > 0 ? totalGaussian.toLocaleString() : (s.status === 'Completed' || s.status === 'Published' ? '820,000' : '--')
+      gaussianCount: totalGaussian > 0 ? totalGaussian.toLocaleString() : '--'
     };
   });
 
   readonly completedRoomsCount = computed(() => {
     const s = this.scan();
     if (!s || !s.rooms) return 0;
-    return s.rooms.filter(r => r.status === 'Completed').length;
+    return s.rooms.filter((r) => normalizeScanRoomStatus(r.status) === 'Completed').length;
   });
 
   readonly overallRoomsPercent = computed(() => {
     const s = this.scan();
     if (!s || !s.rooms || s.rooms.length === 0) return 0;
-    const completed = s.rooms.filter(r => r.status === 'Completed').length;
+    const completed = s.rooms.filter((r) => normalizeScanRoomStatus(r.status) === 'Completed').length;
     return Math.round((completed / s.rooms.length) * 100);
   });
 
   ngOnInit(): void {
-    // 1. Load initial properties list for easy selection
     this.loadProperties();
 
-    // 2. Check for route query parameters (e.g. ?scanId=...)
-    this.route.queryParams.subscribe(params => {
+    this.route.queryParams.subscribe((params) => {
       const qScanId = params['scanId'];
       const qPropId = params['propertyId'];
 
@@ -790,10 +784,11 @@ export class ScanJobsMonitorComponent implements OnInit, OnDestroy {
       }
     });
 
-    // 3. Setup periodic auto-refresh if scan is currently processing
     this.autoRefreshTimer = setInterval(() => {
       const s = this.scan();
-      if (s && (s.status === 'Processing' || s.status === 'Claimed' || s.status === 'PendingProcessing' || s.status === 'PendingUpload')) {
+      if (!s) return;
+      const st = normalizeScanJobStatus(s.status);
+      if (st === 'Processing' || st === 'PendingProcessing' || st === 'Uploading') {
         this.refreshCurrentScan(true);
       }
     }, 8000);
@@ -812,7 +807,6 @@ export class ScanJobsMonitorComponent implements OnInit, OnDestroy {
         this.properties.set(res.items || []);
         this.isLoadingProperties.set(false);
 
-        // If no scan is selected and property is picked, auto-select first property
         if (!this.scan() && !this.selectedPropertyId() && res.items?.length > 0) {
           const firstProp = res.items[0];
           this.selectedPropertyId.set(firstProp.id);
@@ -869,24 +863,20 @@ export class ScanJobsMonitorComponent implements OnInit, OnDestroy {
         this.scan.set(scanData);
         this.isLoadingScan.set(false);
 
-        // Update selected property if different
         if (scanData.propertyId && scanData.propertyId !== this.selectedPropertyId()) {
           this.selectedPropertyId.set(scanData.propertyId);
           this.loadPropertyScans(scanData.propertyId);
         }
 
-        // Load share links for the property
         if (scanData.propertyId) {
           this.loadShareLinks(scanData.propertyId);
         }
       },
-      error: () => {
+      error: (err) => {
         this.isLoadingScan.set(false);
         this.actionMessage.set({
           type: 'error',
-          text: this.i18n.isRtl() 
-            ? `فشل العثور على جلسة المسح بالمعرف: ${scanId}` 
-            : `Could not load scan job with ID: ${scanId}`
+          text: extractApiErrorMessage(err, `فشل العثور على جلسة المسح بالمعرف: ${scanId}`)
         });
       }
     });
@@ -911,7 +901,6 @@ export class ScanJobsMonitorComponent implements OnInit, OnDestroy {
     });
   }
 
-  // --- Kaggle Dispatch Token Generator Action ---
   generateKaggleDispatchToken(): void {
     const s = this.scan();
     if (!s) return;
@@ -929,13 +918,14 @@ export class ScanJobsMonitorComponent implements OnInit, OnDestroy {
       },
       error: (err) => {
         this.isGeneratingToken.set(false);
-        const msg = err.error?.message || (this.i18n.isRtl() ? 'فشل توليد التوكن. تأكد من صلاحيات المشرف.' : 'Failed to generate token. Admin permissions required.');
-        this.actionMessage.set({ type: 'error', text: msg });
+        this.actionMessage.set({
+          type: 'error',
+          text: extractApiErrorMessage(err, 'فشل توليد التوكن. تأكد من صلاحيات المشرف.')
+        });
       }
     });
   }
 
-  // --- Retry Failed Rooms Action ---
   retryFailedRooms(): void {
     const s = this.scan();
     if (!s) return;
@@ -943,9 +933,7 @@ export class ScanJobsMonitorComponent implements OnInit, OnDestroy {
     if (s.rawClipsExpired) {
       this.actionMessage.set({
         type: 'error',
-        text: this.i18n.isRtl() 
-          ? 'لا يمكن إعادة المحاولة: انتهت صلاحية المقاطع الخام (سياسة الاحتفاظ 30 يوماً)' 
-          : 'Cannot retry: Raw video clips have expired (30-day retention policy)'
+        text: 'لا يمكن إعادة المحاولة: انتهت صلاحية المقاطع الخام (سياسة الاحتفاظ 30 يوماً)'
       });
       return;
     }
@@ -957,20 +945,19 @@ export class ScanJobsMonitorComponent implements OnInit, OnDestroy {
         this.scan.set(updated);
         this.actionMessage.set({
           type: 'success',
-          text: this.i18n.isRtl() 
-            ? 'تمت إعادة تعيين الغرف غير المكتملة وإدراجها في طابور المعالجة بنجاح' 
-            : 'Incomplete room jobs reset and re-queued for processing successfully'
+          text: 'تمت إعادة تعيين الغرف غير المكتملة وإدراجها في طابور المعالجة بنجاح'
         });
       },
       error: (err) => {
         this.isRetrying.set(false);
-        const msg = err.error?.message || (this.i18n.isRtl() ? 'حدث خطأ أثناء محاولة إعادة معالجة الغرف' : 'Error retrying failed rooms');
-        this.actionMessage.set({ type: 'error', text: msg });
+        this.actionMessage.set({
+          type: 'error',
+          text: extractApiErrorMessage(err, 'حدث خطأ أثناء محاولة إعادة معالجة الغرف')
+        });
       }
     });
   }
 
-  // --- Publish Scan Action ---
   publishScan(): void {
     const s = this.scan();
     if (!s) return;
@@ -981,9 +968,7 @@ export class ScanJobsMonitorComponent implements OnInit, OnDestroy {
         this.isPublishing.set(false);
         this.actionMessage.set({
           type: 'success',
-          text: this.i18n.isRtl() 
-            ? 'تم نشر الجولة ثلاثية الأبعاد بنجاح وأرشفة الجلسات السابقة لهذا العقار' 
-            : '3D Scan published successfully! Prior published scans archived.'
+          text: 'تم نشر الجولة ثلاثية الأبعاد بنجاح وأرشفة الجلسات السابقة لهذا العقار'
         });
         this.refreshCurrentScan();
         if (s.propertyId) {
@@ -992,13 +977,14 @@ export class ScanJobsMonitorComponent implements OnInit, OnDestroy {
       },
       error: (err) => {
         this.isPublishing.set(false);
-        const msg = err.error?.message || (this.i18n.isRtl() ? 'تعذر نشر المسح: تأكد من اكتمال جميع الغرف وحفظ إعدادات المشهد في الاستوديو' : 'Cannot publish: ensure all rooms are completed and scene configuration exists');
-        this.actionMessage.set({ type: 'error', text: msg });
+        this.actionMessage.set({
+          type: 'error',
+          text: extractApiErrorMessage(err, 'تعذر نشر المسح: تأكد من اكتمال جميع الغرف وحفظ إعدادات المشهد في الاستوديو')
+        });
       }
     });
   }
 
-  // --- Share Links Management ---
   loadShareLinks(propertyId: string, silent = false): void {
     if (!silent) this.isLoadingShareLinks.set(true);
     this.propertiesService.getShareLinks(propertyId).subscribe({
@@ -1022,14 +1008,16 @@ export class ScanJobsMonitorComponent implements OnInit, OnDestroy {
         this.isCreatingShareLink.set(false);
         this.actionMessage.set({
           type: 'success',
-          text: this.i18n.isRtl() ? 'تم إنشاء رابط مشاركة جديد بنجاح' : 'New share link created successfully'
+          text: 'تم إنشاء رابط مشاركة جديد بنجاح'
         });
         this.loadShareLinks(s.propertyId);
       },
       error: (err) => {
         this.isCreatingShareLink.set(false);
-        const msg = err.error?.message || (this.i18n.isRtl() ? 'فشل إنشاء الرابط: تأكد من نشر الجلسة أولاً' : 'Failed to create share link: scan must be published');
-        this.actionMessage.set({ type: 'error', text: msg });
+        this.actionMessage.set({
+          type: 'error',
+          text: extractApiErrorMessage(err, 'فشل إنشاء الرابط: تأكد من نشر الجلسة أولاً')
+        });
       }
     });
   }
@@ -1043,7 +1031,7 @@ export class ScanJobsMonitorComponent implements OnInit, OnDestroy {
         this.isRevokingId.set(null);
         this.actionMessage.set({
           type: 'success',
-          text: this.i18n.isRtl() ? 'تم إلغاء صلاحية الرابط بنجاح' : 'Share link revoked immediately'
+          text: 'تم إلغاء صلاحية الرابط بنجاح'
         });
         if (s?.propertyId) {
           this.loadShareLinks(s.propertyId);
@@ -1051,43 +1039,70 @@ export class ScanJobsMonitorComponent implements OnInit, OnDestroy {
       },
       error: (err) => {
         this.isRevokingId.set(null);
-        const msg = err.error?.message || (this.i18n.isRtl() ? 'تعذر إلغاء الرابط' : 'Failed to revoke link');
-        this.actionMessage.set({ type: 'error', text: msg });
+        this.actionMessage.set({
+          type: 'error',
+          text: extractApiErrorMessage(err, 'تعذر إلغاء الرابط')
+        });
       }
     });
   }
 
-  // --- Helpers & Formatters ---
   canPublish(): boolean {
     const s = this.scan();
     if (!s || !s.rooms || s.rooms.length === 0) return false;
-    return s.rooms.every(r => r.status === 'Completed');
+    return s.rooms.every((r) => normalizeScanRoomStatus(r.status) === 'Completed');
   }
 
   hasFailedOrIncompleteRooms(): boolean {
     const s = this.scan();
     if (!s || !s.rooms) return false;
-    return s.rooms.some(r => r.status === 'Failed' || r.status === 'PendingUpload' || (r.status as any) === 'Pending');
+    return s.rooms.some((r) => {
+      const st = normalizeScanRoomStatus(r.status);
+      return st === 'Failed' || st === 'Pending' || st === 'Uploading';
+    });
   }
 
   getRoomName(room: ScanRoomJobDto, index: number): string {
-    return room.roomName || (room as any).roomLabel || (room as any).roomId || (this.i18n.isRtl() ? `غرفة ${index + 1}` : `Room ${index + 1}`);
+    return room.roomLabel || room.roomId || (this.i18n.isRtl() ? `غرفة ${index + 1}` : `Room ${index + 1}`);
   }
 
   getRoomOrder(room: ScanRoomJobDto, index: number): number {
-    return (room.roomOrder !== undefined && room.roomOrder !== null) ? room.roomOrder : ((room as any).sortOrder !== undefined ? (room as any).sortOrder : index + 1);
+    return room.sortOrder !== undefined && room.sortOrder !== null ? room.sortOrder : index + 1;
   }
 
   getRoomEngineUsed(room: ScanRoomJobDto): string {
-    return (room as any).engineUsed || '';
+    return normalizeEngineUsed(room.engineUsed);
+  }
+
+  getRoomStatusNormalized(status: string | number): string {
+    return normalizeScanRoomStatus(status);
+  }
+
+  getCaptureModeName(mode: string | number): string {
+    return normalizeCaptureMode(mode);
+  }
+
+  getCaptureModeLabel(mode: string | number): string {
+    const m = normalizeCaptureMode(mode);
+    if (this.i18n.isRtl()) {
+      return m === 'Walkthrough' ? 'جولة مستمرة' : 'غرفة بغرفة';
+    }
+    return m === 'Walkthrough' ? 'Walkthrough' : 'Room by Room';
+  }
+
+  getEnginePolicyName(policy: string | number): string {
+    return normalizeEnginePolicy(policy);
+  }
+
+  getScanStatusLabel(status: string | number): string {
+    return normalizeScanJobStatus(status);
   }
 
   parseRoomMetrics(room: ScanRoomJobDto): RoomParsedMetrics {
     const res: RoomParsedMetrics = {};
-    const anyRoom = room as any;
 
-    if (anyRoom.outputSizeBytes) {
-      res.sogModelSizeMb = Number((anyRoom.outputSizeBytes / (1024 * 1024)).toFixed(2));
+    if (room.outputSizeBytes) {
+      res.sogModelSizeMb = Number((room.outputSizeBytes / (1024 * 1024)).toFixed(2));
     }
 
     if (room.metricsJson) {
@@ -1105,118 +1120,76 @@ export class ScanJobsMonitorComponent implements OnInit, OnDestroy {
         if (d.ssim !== undefined) res.ssim = Number(d.ssim);
         if (d.processingTimeSec !== undefined) res.processingTimeSec = Number(d.processingTimeSec);
       } catch {
-        // Safe json parse ignore
+        // Ignore malformed metrics JSON
       }
-    }
-
-    // High quality standard baseline if completed without explicit json
-    if (room.status === 'Completed') {
-      if (res.camerasRegisteredPct === undefined) res.camerasRegisteredPct = 98.4;
-      if (res.sogModelSizeMb === undefined) res.sogModelSizeMb = 14.8;
     }
 
     return res;
   }
 
-  getRoomProgress(status: string): number {
-    switch (status) {
-      case 'PendingUpload':
-      case 'Uploading':
-        return 15;
-      case 'Uploaded':
-      case 'UploadComplete':
-      case 'Pending':
-        return 40;
-      case 'Claimed':
-      case 'Processing':
-        return 75;
-      case 'Completed':
-        return 100;
-      case 'Failed':
-        return 100;
-      default:
-        return 10;
+  getRoomProgress(status: string | number): number {
+    switch (normalizeScanRoomStatus(status)) {
+      case 'Uploading': return 15;
+      case 'Pending': return 40;
+      case 'Processing': return 75;
+      case 'Completed': return 100;
+      case 'Failed': return 100;
+      default: return 10;
     }
   }
 
-  getRoomFillClass(status: string): string {
-    switch (status) {
+  getRoomFillClass(status: string | number): string {
+    switch (normalizeScanRoomStatus(status)) {
       case 'Completed': return 'fill-success';
-      case 'Processing':
-      case 'Claimed': return 'fill-info';
-      case 'Uploaded':
-      case 'UploadComplete':
+      case 'Processing': return 'fill-info';
       case 'Pending': return 'fill-warning';
       case 'Failed': return 'fill-danger';
       default: return 'fill-secondary';
     }
   }
 
-  getRoomStatusStepDescription(status: string): string {
+  getRoomStatusStepDescription(status: string | number): string {
     const isAr = this.i18n.isRtl();
-    switch (status) {
+    switch (normalizeScanRoomStatus(status)) {
       case 'Completed': return isAr ? 'اكتمل بناء مجسم .sog' : '.sog model generated';
-      case 'Processing':
-      case 'Claimed': return isAr ? 'حساب التدريب والـ Splats في Kaggle' : 'Gaussian training on GPU';
-      case 'Uploaded':
-      case 'UploadComplete':
+      case 'Processing': return isAr ? 'حساب التدريب والـ Splats في Kaggle' : 'Gaussian training on GPU';
       case 'Pending': return isAr ? 'المقطع مرفوع، في انتظار المعالج' : 'Video uploaded, awaiting worker';
-      case 'PendingUpload':
       case 'Uploading': return isAr ? 'جاري رفع الفيديو من الهاتف' : 'Uploading video from device';
       case 'Failed': return isAr ? 'فشلت المعالجة' : 'Reconstruction failed';
-      default: return status;
+      default: return String(status);
     }
   }
 
-  getRoomStatusBadge(status: string): { labelAr: string; labelEn: string; class: string } {
-    switch (status) {
-      case 'Completed':
-        return { labelAr: 'مكتمل', labelEn: 'Completed', class: 'badge-success' };
-      case 'Processing':
-      case 'Claimed':
-        return { labelAr: 'قيد المعالجة', labelEn: 'Processing', class: 'badge-info' };
-      case 'Uploaded':
-      case 'UploadComplete':
-      case 'Pending':
-        return { labelAr: 'تم الرفع / بالانتظار', labelEn: 'Uploaded / Pending', class: 'badge-warning' };
-      case 'PendingUpload':
-      case 'Uploading':
-        return { labelAr: 'قيد الرفع', labelEn: 'Uploading', class: 'badge-secondary' };
-      case 'Failed':
-        return { labelAr: 'فشل', labelEn: 'Failed', class: 'badge-danger' };
-      default:
-        return { labelAr: status, labelEn: status, class: 'badge-secondary' };
+  getRoomStatusBadge(status: string | number): { labelAr: string; labelEn: string; class: string } {
+    const s = normalizeScanRoomStatus(status);
+    switch (s) {
+      case 'Completed': return { labelAr: 'مكتمل', labelEn: 'Completed', class: 'badge-success' };
+      case 'Processing': return { labelAr: 'قيد المعالجة', labelEn: 'Processing', class: 'badge-info' };
+      case 'Pending': return { labelAr: 'بالانتظار', labelEn: 'Pending', class: 'badge-warning' };
+      case 'Uploading': return { labelAr: 'قيد الرفع', labelEn: 'Uploading', class: 'badge-secondary' };
+      case 'Failed': return { labelAr: 'فشل', labelEn: 'Failed', class: 'badge-danger' };
+      default: return { labelAr: s, labelEn: s, class: 'badge-secondary' };
     }
   }
 
-  getScanStatusBadge(status: string): { labelAr: string; labelEn: string; class: string } {
-    switch (status) {
-      case 'Published':
-        return { labelAr: 'منشور', labelEn: 'Published', class: 'badge-success' };
-      case 'Completed':
-        return { labelAr: 'مكتمل', labelEn: 'Completed', class: 'badge-success' };
-      case 'Processing':
-      case 'Claimed':
-        return { labelAr: 'قيد المعالجة', labelEn: 'Processing', class: 'badge-info' };
+  getScanStatusBadge(status: string | number): { labelAr: string; labelEn: string; class: string } {
+    const s = normalizeScanJobStatus(status);
+    switch (s) {
+      case 'Published': return { labelAr: 'منشور', labelEn: 'Published', class: 'badge-success' };
+      case 'ReadyForReview': return { labelAr: 'جاهز للمراجعة', labelEn: 'Ready for Review', class: 'badge-success' };
+      case 'Processing': return { labelAr: 'قيد المعالجة', labelEn: 'Processing', class: 'badge-info' };
       case 'PendingProcessing':
-      case 'PendingUpload':
       case 'Uploading':
-        return { labelAr: 'في انتظار المعالجة', labelEn: 'Pending', class: 'badge-warning' };
-      case 'Failed':
-        return { labelAr: 'فشل', labelEn: 'Failed', class: 'badge-danger' };
-      case 'Archived':
-        return { labelAr: 'مؤرشف', labelEn: 'Archived', class: 'badge-secondary' };
-      default:
-        return { labelAr: status, labelEn: status, class: 'badge-secondary' };
+      case 'Draft': return { labelAr: 'قيد الإعداد / الانتظار', labelEn: s, class: 'badge-warning' };
+      case 'Failed': return { labelAr: 'فشل', labelEn: 'Failed', class: 'badge-danger' };
+      case 'Archived': return { labelAr: 'مؤرشف', labelEn: 'Archived', class: 'badge-secondary' };
+      default: return { labelAr: s, labelEn: s, class: 'badge-secondary' };
     }
   }
 
   getPublicShareUrl(link: ShareLinkDto): string {
-    if (link.shareUrl && link.shareUrl.startsWith('http')) {
-      return link.shareUrl;
-    }
-    const viewerUrl = API_CONFIG.viewerBaseUrl || 'https://viewer-web.pages.dev';
-    return `${viewerUrl}/tour/${link.token}`;
+    const viewerUrl = (API_CONFIG.viewerBaseUrl || 'https://viewer-web.pages.dev').replace(/\/+$/, '');
+    return `${viewerUrl}/v/${link.token}`;
   }
 
   getBashCommandSnippet(): string {
@@ -1234,11 +1207,7 @@ export class ScanJobsMonitorComponent implements OnInit, OnDestroy {
   copyToClipboard(text: string, key: string): void {
     if (!text) return;
     if (navigator?.clipboard?.writeText) {
-      navigator.clipboard.writeText(text).then(() => {
-        this.setCopiedKey(key);
-      }).catch(() => {
-        this.fallbackCopy(text, key);
-      });
+      navigator.clipboard.writeText(text).then(() => this.setCopiedKey(key)).catch(() => this.fallbackCopy(text, key));
     } else {
       this.fallbackCopy(text, key);
     }
@@ -1262,9 +1231,9 @@ export class ScanJobsMonitorComponent implements OnInit, OnDestroy {
   }
 
   private setCopiedKey(key: string): void {
-    this.copiedMap.update(m => ({ ...m, [key]: true }));
+    this.copiedMap.update((m) => ({ ...m, [key]: true }));
     setTimeout(() => {
-      this.copiedMap.update(m => ({ ...m, [key]: false }));
+      this.copiedMap.update((m) => ({ ...m, [key]: false }));
     }, 2200);
   }
 

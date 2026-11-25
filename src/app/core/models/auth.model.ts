@@ -1,8 +1,11 @@
+import { PaginatedResponse } from './common.model';
+
 export interface UserDto {
   id: string;
   email: string;
   fullName: string;
   role: 'Admin' | 'Agent';
+  officePhone?: string | null;
   isActive: boolean;
   createdAt: string;
 }
@@ -15,7 +18,7 @@ export interface LoginRequest {
 export interface AuthResultDto {
   accessToken: string;
   refreshToken: string;
-  tokenType: string;
+  tokenType?: string;
   expiresIn: number;
   user: UserDto;
 }
@@ -33,19 +36,13 @@ export interface CreateUserRequest {
   password: string;
   fullName: string;
   role: 'Admin' | 'Agent';
+  officePhone?: string;
 }
 
 export interface PatchUserRequest {
   isActive?: boolean;
   role?: 'Admin' | 'Agent';
-  fullName?: string;
+  officePhone?: string;
 }
 
-export interface PaginatedListOfUserDto {
-  items: UserDto[];
-  pageIndex: number;
-  totalPages: number;
-  totalCount: number;
-  hasPreviousPage: boolean;
-  hasNextPage: boolean;
-}
+export type PaginatedListOfUserDto = PaginatedResponse<UserDto>;

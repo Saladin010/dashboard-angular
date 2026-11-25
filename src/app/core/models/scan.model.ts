@@ -1,48 +1,103 @@
 export type ScanCaptureMode = 'Walkthrough' | 'RoomByRoom';
-export type ScanEnginePolicy = 'Auto' | 'ForceMast3r' | 'ForceColmap';
-export type ScanJobStatus = 'PendingUpload' | 'PendingProcessing' | 'Claimed' | 'Processing' | 'Completed' | 'Failed' | 'Published' | 'Archived';
-export type ScanRoomStatus = 'PendingUpload' | 'Uploaded' | 'Processing' | 'Completed' | 'Failed';
+export type ScanEnginePolicy = 'AutoGsplatWithMast3rFallback' | 'ForceMast3r';
+export type ScanJobStatus =
+  | 'Draft'
+  | 'Uploading'
+  | 'PendingProcessing'
+  | 'Processing'
+  | 'ReadyForReview'
+  | 'Published'
+  | 'Archived'
+  | 'Failed';
+export type ScanRoomJobStatus = 'Uploading' | 'Pending' | 'Processing' | 'Completed' | 'Failed';
+export type ScanEngineUsed = 'NerfstudioGsplat' | 'Mast3rFallback';
+
+const CAPTURE_MODE_MAP: readonly ScanCaptureMode[] = ['Walkthrough', 'RoomByRoom'];
+const ENGINE_POLICY_MAP: readonly ScanEnginePolicy[] = ['AutoGsplatWithMast3rFallback', 'ForceMast3r'];
+const SCAN_JOB_STATUS_MAP: readonly ScanJobStatus[] = [
+  'Draft',
+  'Uploading',
+  'PendingProcessing',
+  'Processing',
+  'ReadyForReview',
+  'Published',
+  'Archived',
+  'Failed'
+];
+const ROOM_JOB_STATUS_MAP: readonly ScanRoomJobStatus[] = [
+  'Uploading',
+  'Pending',
+  'Processing',
+  'Completed',
+  'Failed'
+];
+const ENGINE_USED_MAP: readonly ScanEngineUsed[] = ['NerfstudioGsplat', 'Mast3rFallback'];
+
+function normalizeEnum<T extends string>(val: T | number | string | null | undefined, map: readonly T[], fallback: T): T {
+  if (typeof val === 'number' && val >= 0 && val < map.length) {
+    return map[val];
+  }
+  if (typeof val === 'string' && val.trim()) {
+    const asInt = Number(val);
+    if (!Number.isNaN(asInt) && Number.isInteger(asInt) && asInt >= 0 && asInt < map.length) {
+      return map[asInt];
+    }
+    return val as T;
+  }
+  return fallback;
+}
+
+export const normalizeCaptureMode = (v: ScanCaptureMode | number | string | undefined): ScanCaptureMode =>
+  normalizeEnum(v, CAPTURE_MODE_MAP, 'Walkthrough');
+
+export const normalizeEnginePolicy = (v: ScanEnginePolicy | number | string | undefined): ScanEnginePolicy =>
+  normalizeEnum(v, ENGINE_POLICY_MAP, 'AutoGsplatWithMast3rFallback');
+
+export const normalizeScanJobStatus = (v: ScanJobStatus | number | string | undefined): ScanJobStatus =>
+  normalizeEnum(v, SCAN_JOB_STATUS_MAP, 'Draft');
+
+export const normalizeScanRoomStatus = (v: ScanRoomJobStatus | number | string | undefined): ScanRoomJobStatus =>
+  normalizeEnum(v, ROOM_JOB_STATUS_MAP, 'Pending');
+
+export const normalizeEngineUsed = (v: ScanEngineUsed | number | string | null | undefined): string =>
+  v === null || v === undefined ? '' : normalizeEnum(v, ENGINE_USED_MAP, 'NerfstudioGsplat');
 
 export interface ScanRoomJobDto {
   id: string;
   scanJobId: string;
-  roomName: string;
-  roomOrder: number;
-  status: ScanRoomStatus;
-  rawVideoKey?: string;
-  sogModelKey?: string;
-  signedModelUrl?: string;
-  metricsJson?: string;
-  errorMessage?: string;
-  retryCount: number;
+  roomId: string;
+  roomLabel: string;
+  sortOrder: number;
+  rawR2Key: string;
+  rawSizeBytes: number;
+  status: ScanRoomJobStatus | number;
+  engineUsed?: ScanEngineUsed | number | null;
+  outputR2Key?: string | null;
+  outputSizeBytes?: number | null;
+  gaussianCount?: number | null;
+  metricsJson?: string | null;
+  errorMessage?: string | null;
+  updatedAt?: string | null;
 }
 
 export interface ScanJobDto {
   id: string;
   propertyId: string;
-  attemptId: string;
+  captureMode: ScanCaptureMode | number;
+  enginePolicy: ScanEnginePolicy | number;
+  status: ScanJobStatus | number;
+  attemptId?: string | null;
   attemptCount: number;
-  captureMode: ScanCaptureMode;
-  enginePolicy: ScanEnginePolicy;
-  status: ScanJobStatus;
-  workerTokenExpiresAt?: string;
-  processingStartedAt?: string;
-  lastHeartbeatAt?: string;
-  rawClipsExpireAt?: string;
-  thumbnailKey?: string;
-  thumbnailUrl?: string;
+  processingStartedAt?: string | null;
+  lastHeartbeatAt?: string | null;
+  rawClipsExpireAt?: string | null;
   rawClipsExpired: boolean;
-  rooms: ScanRoomJobDto[];
+  thumbnailKey?: string | null;
+  errorMessage?: string | null;
+  createdBy: string;
   createdAt: string;
-  updatedAt?: string;
-}
-
-export interface SceneRoomConfigDto {
-  roomName: string;
-  defaultSpawnPose?: number[];
-  cropBounds?: number[];
-  floorTiltDegrees?: number;
-  scaleCorrection?: number;
+  updatedAt?: string | null;
+  rooms: ScanRoomJobDto[];
 }
 
 export interface SceneHotspotDto {
@@ -53,16 +108,37 @@ export interface SceneHotspotDto {
   position: number[];
 }
 
+export interface SceneItemHotspotsPayload {
+  cropBounds?: number[];
+  floorTiltDegrees?: number;
+  scaleCorrection?: number;
+  links?: SceneHotspotDto[];
+}
+
+export interface SceneItemDto {
+  roomId: string;
+  roomLabel: string;
+  sortOrder: number;
+  cameraPosition?: number[] | null;
+  cameraTarget?: number[] | null;
+  hotspots?: SceneItemHotspotsPayload | SceneHotspotDto[] | null;
+}
+
 export interface SceneConfigurationDto {
+  scanJobId: string;
   version: number;
-  defaultRoomId?: string;
-  rooms: Record<string, SceneRoomConfigDto>;
-  hotspots: SceneHotspotDto[];
+  defaultSceneId: string;
+  eyeHeightMeters: number;
+  scenes: SceneItemDto[];
+  updatedAt: string;
+  updatedBy: string;
 }
 
 export interface UpdateSceneConfigRequest {
   expectedVersion: number;
-  config: SceneConfigurationDto;
+  defaultSceneId: string;
+  eyeHeightMeters: number;
+  scenes: SceneItemDto[];
 }
 
 export interface DispatchTokenResponse {
@@ -71,17 +147,29 @@ export interface DispatchTokenResponse {
   expiresAt: string;
 }
 
+export interface PublishScanResultDto {
+  scanId: string;
+  propertyId: string;
+  scanStatus: string;
+  propertyStatus: string;
+  publishedAt: string;
+}
+
+export interface ScanPreviewRoomDto {
+  roomId: string;
+  roomLabel: string;
+  sortOrder: number;
+  outputR2Key?: string | null;
+  signedModelUrl?: string | null;
+  gaussianCount?: number | null;
+  status: string;
+}
+
 export interface ScanPreviewDto {
   scanId: string;
   propertyId: string;
-  propertyTitle: string;
-  captureMode: ScanCaptureMode;
-  status: ScanJobStatus;
+  captureMode: string;
+  status: string;
+  rooms: ScanPreviewRoomDto[];
   sceneConfig: SceneConfigurationDto;
-  rooms: {
-    roomId: string;
-    roomName: string;
-    status: ScanRoomStatus;
-    signedModelUrl?: string;
-  }[];
 }

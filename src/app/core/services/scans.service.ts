@@ -2,12 +2,13 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { API_CONFIG } from '../config/api.config';
-import { 
-  ScanJobDto, 
-  ScanPreviewDto, 
-  DispatchTokenResponse, 
-  UpdateSceneConfigRequest, 
-  SceneConfigurationDto 
+import {
+  ScanJobDto,
+  ScanPreviewDto,
+  DispatchTokenResponse,
+  UpdateSceneConfigRequest,
+  SceneConfigurationDto,
+  PublishScanResultDto
 } from '../models/scan.model';
 
 @Injectable({
@@ -41,8 +42,8 @@ export class ScansService {
     return this.http.put<SceneConfigurationDto>(url, req);
   }
 
-  publishScan(scanId: string): Observable<ScanJobDto> {
+  publishScan(scanId: string): Observable<PublishScanResultDto> {
     const url = `${API_CONFIG.baseUrl}${API_CONFIG.endpoints.scans.publish(scanId)}`;
-    return this.http.post<ScanJobDto>(url, {});
+    return this.http.post<PublishScanResultDto>(url, {});
   }
 }

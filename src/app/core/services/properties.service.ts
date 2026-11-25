@@ -3,12 +3,12 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { API_CONFIG } from '../config/api.config';
 import { PaginatedResponse } from '../models/common.model';
-import { 
-  PropertyDto, 
-  PropertyInternalDto, 
-  CreatePropertyRequestDto, 
-  UpdatePropertyRequestDto, 
-  ShareLinkDto 
+import {
+  PropertyDto,
+  PropertyInternalDto,
+  CreatePropertyRequestDto,
+  UpdatePropertyRequestDto,
+  ShareLinkDto
 } from '../models/property.model';
 import { ScanJobDto } from '../models/scan.model';
 
@@ -17,7 +17,7 @@ export interface PropertyFilterParams {
   district?: string;
   status?: string;
   listingType?: string;
-  pageIndex?: number;
+  page?: number;
   pageSize?: number;
 }
 
@@ -34,7 +34,7 @@ export class PropertiesService {
       if (filters.district) params = params.set('district', filters.district);
       if (filters.status) params = params.set('status', filters.status);
       if (filters.listingType) params = params.set('listingType', filters.listingType);
-      if (filters.pageIndex !== undefined) params = params.set('pageIndex', filters.pageIndex.toString());
+      if (filters.page !== undefined) params = params.set('page', filters.page.toString());
       if (filters.pageSize !== undefined) params = params.set('pageSize', filters.pageSize.toString());
     }
 
@@ -47,14 +47,14 @@ export class PropertiesService {
     return this.http.get<PropertyInternalDto>(url);
   }
 
-  createProperty(dto: CreatePropertyRequestDto): Observable<PropertyDto> {
+  createProperty(dto: CreatePropertyRequestDto): Observable<PropertyInternalDto> {
     const url = `${API_CONFIG.baseUrl}${API_CONFIG.endpoints.properties.create}`;
-    return this.http.post<PropertyDto>(url, dto);
+    return this.http.post<PropertyInternalDto>(url, dto);
   }
 
-  updateProperty(id: string, dto: UpdatePropertyRequestDto): Observable<PropertyDto> {
+  updateProperty(id: string, dto: UpdatePropertyRequestDto): Observable<PropertyInternalDto> {
     const url = `${API_CONFIG.baseUrl}${API_CONFIG.endpoints.properties.update(id)}`;
-    return this.http.put<PropertyDto>(url, dto);
+    return this.http.put<PropertyInternalDto>(url, dto);
   }
 
   getPropertyScans(propertyId: string): Observable<ScanJobDto[]> {
