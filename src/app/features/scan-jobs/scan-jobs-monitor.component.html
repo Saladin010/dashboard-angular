@@ -1,0 +1,587 @@
+<div class="atelier-page" [attr.dir]="i18n.dir()">
+  <!-- Ambient subtle grid backdrop -->
+  <div class="atelier-backdrop" aria-hidden="true"></div>
+
+  <!-- Top Header & Property Context Ribbon -->
+  <header class="atelier-header">
+    <div class="header-title-block">
+      <div class="eyebrow-pill">
+        <span class="pulse-dot"></span>
+        <span>{{ i18n.isRtl() ? 'منصة التجهيز والنشر ثلاثي الأبعاد' : '3D Spatial Pipeline Console' }}</span>
+      </div>
+      <h1>{{ i18n.isRtl() ? 'مراقبة المسح ونشر الجولات' : 'Scan Queue & Tour Publishing' }}</h1>
+    </div>
+
+    <div class="header-toolbar">
+      <div class="property-select-shell">
+        <span class="select-caption">{{ i18n.isRtl() ? 'العقار' : 'Property' }}</span>
+        <select
+          class="atelier-select"
+          [ngModel]="selectedPropertyId()"
+          (ngModelChange)="onPropertyChange($event)"
+          [disabled]="isLoadingProperties()"
+        >
+          <option value="">{{ i18n.isRtl() ? '-- اختر عقاراً --' : '-- Choose Property --' }}</option>
+          @for (prop of properties(); track prop.id) {
+            <option [value]="prop.id">{{ prop.title }} — {{ prop.city }}</option>
+          }
+        </select>
+      </div>
+
+      @if (selectedPropertyId()) {
+        <button type="button" class="btn-atelier btn-accent" (click)="openCreateScanModal()">
+          <span>＋</span>
+          <span>{{ i18n.isRtl() ? 'رفع مسح جديد' : 'New Scan Upload' }}</span>
+        </button>
+      }
+
+      <button
+        type="button"
+        class="btn-atelier btn-ghost-icon"
+        (click)="toggleDirectSearch()"
+        [class.active]="showDirectSearch()"
+        [title]="i18n.isRtl() ? 'بحث مباشر برقم الجلسة (Scan ID)' : 'Find by Scan ID'"
+      >
+        🔍
+      </button>
+
+      @if (scan()) {
+        <button
+          type="button"
+          class="btn-atelier btn-ghost-icon"
+          (click)="refreshCurrentScan()"
+          [disabled]="isLoadingScan()"
+          [title]="i18n.isRtl() ? 'تحديث' : 'Refresh'"
+        >
+          🔄
+        </button>
+      }
+    </div>
+  </header>
+
+  <!-- Optional Direct UUID Lookup Drawer -->
+  @if (showDirectSearch()) {
+    <div class="direct-lookup-bar">
+      <input
+        type="text"
+        class="atelier-input mono"
+        [placeholder]="i18n.isRtl() ? 'الصق معرّف الجلسة (Scan UUID) واضغط Enter...' : 'Paste Scan UUID and press Enter...'"
+        [(ngModel)]="searchScanIdInput"
+        (keyup.enter)="searchByDirectId()"
+      />
+      <button
+        type="button"
+        class="btn-atelier btn-surface"
+        (click)="searchByDirectId()"
+        [disabled]="isLoadingScan() || !searchScanIdInput.trim()"
+      >
+        {{ i18n.isRtl() ? 'فتح الجلسة' : 'Open Scan' }}
+      </button>
+    </div>
+  }
+
+  <!-- Toast Banner -->
+  @if (actionMessage()) {
+    <div class="atelier-toast" [class.is-success]="actionMessage()!.type === 'success'" [class.is-error]="actionMessage()!.type === 'error'">
+      <span>{{ actionMessage()!.type === 'success' ? '✓' : '!' }} {{ actionMessage()!.text }}</span>
+      <button type="button" class="toast-dismiss" (click)="actionMessage.set(null)">✕</button>
+    </div>
+  }
+
+  <!-- Property Session Switcher Strip -->
+  @if (selectedPropertyId() && propertyScans().length > 0) {
+    <nav class="sessions-strip" aria-label="Property scan sessions">
+      <span class="strip-label">{{ i18n.isRtl() ? 'جلسات العقار:' : 'Sessions:' }}</span>
+      <div class="sessions-scroll">
+        @for (sc of propertyScans(); track sc.id; let idx = $index) {
+          @let st = getScanStatusBadge(sc.status);
+          <button
+            type="button"
+            class="session-chip"
+            [class.active]="scan()?.id === sc.id"
+            (click)="loadScan(sc.id)"
+          >
+            <span class="chip-dot" [ngClass]="st.class"></span>
+            <span class="chip-title">{{ i18n.isRtl() ? 'جلسة #' + (idx + 1) : 'Scan #' + (idx + 1) }}</span>
+            <span class="chip-status">{{ i18n.isRtl() ? st.labelAr : st.labelEn }}</span>
+            <span class="chip-date mono">{{ formatShortDate(sc.createdAt) }}</span>
+          </button>
+        }
+      </div>
+    </nav>
+  }
+
+  <!-- Loading View -->
+  @if (isLoadingScan()) {
+    <div class="atelier-empty-state">
+      <div class="atelier-spinner"></div>
+      <p>{{ i18n.isRtl() ? 'جاري تحميل تفاصيل المسح والغرف...' : 'Loading scan telemetry...' }}</p>
+    </div>
+  }
+
+  <!-- Active Scan Workspace -->
+  @if (scan() && !isLoadingScan()) {
+    @let statusStr = scanStatusNormalized();
+    @let stageIndex = currentPipelineStage();
+
+    <!-- 30-day expiry warning -->
+    @if (scan()!.rawClipsExpired) {
+      <div class="atelier-warning-strip">
+        <span>⚠️</span>
+        <span>
+          {{ i18n.isRtl()
+            ? 'انتهت صلاحية الفيديوهات الخام لهذا المسح (سياسة 30 يوماً) — إعادة المعالجة غير متاحة.'
+            : 'Raw video clips expired after 30-day retention — retry disabled.' }}
+        </span>
+      </div>
+    }
+
+    <!-- 4-Stage Architectural Pipeline + Single Primary Action -->
+    <section class="pipeline-card">
+      <div class="pipeline-steps">
+        <div class="step-node" [class.done]="stageIndex >= 1" [class.current]="stageIndex === 1">
+          <span class="step-index mono">01</span>
+          <div class="step-copy">
+            <strong>{{ i18n.isRtl() ? 'رفع الفيديو' : 'Upload' }}</strong>
+            <small>{{ i18n.isRtl() ? 'مقاطع الغرف على R2' : 'Clips on R2' }}</small>
+          </div>
+        </div>
+        <div class="step-connector" [class.filled]="stageIndex >= 2"></div>
+
+        <div class="step-node" [class.done]="stageIndex >= 2" [class.current]="stageIndex === 2">
+          <span class="step-index mono">02</span>
+          <div class="step-copy">
+            <strong>{{ i18n.isRtl() ? 'بناء 3D (.glb)' : '3D Build' }}</strong>
+            <small>{{ i18n.isRtl() ? 'معالجة Meshroom' : 'Colab T4 Worker' }}</small>
+          </div>
+        </div>
+        <div class="step-connector" [class.filled]="stageIndex >= 3"></div>
+
+        <div class="step-node" [class.done]="stageIndex >= 3" [class.current]="stageIndex === 3">
+          <span class="step-index mono">03</span>
+          <div class="step-copy">
+            <strong>{{ i18n.isRtl() ? 'مراجعة الاستوديو' : 'Studio Prep' }}</strong>
+            <small>{{ i18n.isRtl() ? 'الحدود ونقطة البداية' : 'Crop & Spawn Pose' }}</small>
+          </div>
+        </div>
+        <div class="step-connector" [class.filled]="stageIndex >= 4"></div>
+
+        <div class="step-node" [class.done]="stageIndex >= 4" [class.current]="stageIndex === 4">
+          <span class="step-index mono">04</span>
+          <div class="step-copy">
+            <strong>{{ i18n.isRtl() ? 'منشور للعملاء' : 'Published' }}</strong>
+            <small>{{ i18n.isRtl() ? 'جاهز للمشاركة' : 'Share Links Active' }}</small>
+          </div>
+        </div>
+      </div>
+
+      <div class="pipeline-primary-cta">
+        @if (statusStr === 'Published') {
+          <a [routerLink]="['/studio', scan()!.id]" class="btn-atelier btn-surface">
+            <span>📐</span>
+            <span>{{ i18n.isRtl() ? 'تعديل في الاستوديو' : 'Open Studio' }}</span>
+          </a>
+          <button
+            type="button"
+            class="btn-atelier btn-accent"
+            (click)="quickCopyOrCreateShareLink()"
+            [disabled]="isCreatingShareLink()"
+          >
+            <span>{{ isCopied('heroShare') ? '✓' : '🔗' }}</span>
+            <span>
+              {{ isCopied('heroShare')
+                ? (i18n.isRtl() ? 'تم نسخ رابط الجولة!' : 'Tour Link Copied!')
+                : (i18n.isRtl() ? 'نسخ رابط الجولة للعميل' : 'Copy Client Tour Link') }}
+            </span>
+          </button>
+        } @else if (statusStr === 'ReadyForReview' || canPublish()) {
+          <a [routerLink]="['/studio', scan()!.id]" class="btn-atelier btn-surface">
+            <span>📐</span>
+            <span>{{ i18n.isRtl() ? 'ضبط في الاستوديو 3D' : 'Edit in 3D Studio' }}</span>
+          </a>
+          <button
+            type="button"
+            class="btn-atelier btn-accent"
+            [disabled]="isPublishing() || !canPublish()"
+            (click)="publishScan()"
+          >
+            <span>🚀</span>
+            <span>{{ isPublishing() ? (i18n.isRtl() ? 'جاري النشر...' : 'Publishing...') : (i18n.isRtl() ? 'نشر المسح للعملاء' : 'Publish 3D Tour') }}</span>
+          </button>
+        } @else if (statusStr === 'PendingProcessing' || statusStr === 'Processing') {
+          <span class="live-status-pill">
+            <span class="pulse-dot"></span>
+            {{ statusStr === 'PendingProcessing'
+              ? (i18n.isRtl() ? 'في الطابور — سيسحبه معالج Colab تلقائياً' : 'Queued for Colab Worker')
+              : (i18n.isRtl() ? 'جاري بناء المجسم ثلاثي الأبعاد على GPU...' : 'Reconstructing 3D Mesh on GPU...') }}
+          </span>
+        } @else {
+          <span class="live-status-pill is-muted">
+            {{ i18n.isRtl() ? getScanStatusBadge(scan()!.status).labelAr : getScanStatusBadge(scan()!.status).labelEn }}
+          </span>
+        }
+      </div>
+    </section>
+
+    <!-- Crisp Monospaced Telemetry Strip -->
+    <section class="telemetry-strip">
+      <div class="telemetry-item">
+        <span class="t-label">{{ i18n.isRtl() ? 'مطابقة الكاميرات' : 'Cameras' }}</span>
+        <strong class="t-value mono">{{ aggregatedMetrics().camerasRegisteredPct }}%</strong>
+      </div>
+      <div class="telemetry-divider"></div>
+      <div class="telemetry-item">
+        <span class="t-label">{{ i18n.isRtl() ? 'حجم .glb' : 'Model Size' }}</span>
+        <strong class="t-value mono">{{ aggregatedMetrics().modelSizeMb }} <small>MB</small></strong>
+      </div>
+      <div class="telemetry-divider"></div>
+      <div class="telemetry-item">
+        <span class="t-label">{{ i18n.isRtl() ? 'المثلثات 3D' : 'Triangles' }}</span>
+        <strong class="t-value mono">{{ aggregatedMetrics().triangleCount }}</strong>
+      </div>
+      <div class="telemetry-divider"></div>
+      <div class="telemetry-item">
+        <span class="t-label">{{ i18n.isRtl() ? 'زمن المعالجة' : 'Duration' }}</span>
+        <strong class="t-value mono">{{ aggregatedMetrics().processingTime }}</strong>
+      </div>
+      <div class="telemetry-divider"></div>
+      <div class="telemetry-item">
+        <span class="t-label">{{ i18n.isRtl() ? 'معرّف الجلسة' : 'Scan ID' }}</span>
+        <button type="button" class="t-copy mono" (click)="copyToClipboard(scan()!.id, 'scanId')" title="Copy UUID">
+          {{ scan()!.id.substring(0, 8) }}… {{ isCopied('scanId') ? '✓' : '📋' }}
+        </button>
+      </div>
+    </section>
+
+    <!-- Asymmetric Two-Column Workspace -->
+    <div class="workspace-grid">
+      <!-- Left / Primary: Rooms Progress -->
+      <section class="panel-card rooms-stage">
+        <div class="panel-head">
+          <div>
+            <h2>{{ i18n.isRtl() ? 'غرف المسح ثلاثي الأبعاد' : 'Scanned Rooms' }}</h2>
+            <p class="panel-sub">
+              {{ completedRoomsCount() }} / {{ scan()!.rooms.length || 0 }}
+              {{ i18n.isRtl() ? 'غرفة مكتملة' : 'rooms completed' }}
+              • {{ getCaptureModeLabel(scan()!.captureMode) }}
+            </p>
+          </div>
+          <span class="completion-pct mono">{{ overallRoomsPercent() }}%</span>
+        </div>
+
+        <div class="overall-track">
+          <div class="overall-fill" [style.width.%]="overallRoomsPercent()"></div>
+        </div>
+
+        @if (!scan()!.rooms || scan()!.rooms.length === 0) {
+          <div class="inner-empty">{{ i18n.isRtl() ? 'لا توجد غرف مسجلة في هذه الجلسة.' : 'No rooms in this scan.' }}</div>
+        } @else {
+          <div class="rooms-list">
+            @for (room of scan()!.rooms; track room.id || $index) {
+              @let parsedM = parseRoomMetrics(room);
+              @let statusBadge = getRoomStatusBadge(room.status);
+              @let rStatus = getRoomStatusNormalized(room.status);
+
+              <article class="room-row" [class.is-completed]="rStatus === 'Completed'" [class.is-failed]="rStatus === 'Failed'">
+                <div class="room-row-top">
+                  <div class="room-identity">
+                    <span class="room-index mono">#{{ getRoomOrder(room, $index) }}</span>
+                    <div>
+                      <h3>{{ getRoomName(room, $index) }}</h3>
+                      <span class="room-step-desc">{{ getRoomStatusStepDescription(room.status) }}</span>
+                    </div>
+                  </div>
+                  <span class="status-tag" [ngClass]="statusBadge.class">
+                    {{ i18n.isRtl() ? statusBadge.labelAr : statusBadge.labelEn }}
+                  </span>
+                </div>
+
+                <div class="room-bar">
+                  <div class="room-bar-fill" [ngClass]="getRoomFillClass(room.status)" [style.width.%]="getRoomProgress(room.status)"></div>
+                </div>
+
+                <div class="room-metrics-inline mono">
+                  <span>
+                    {{ parsedM.modelFormat === 'sog' ? '.sog:' : '.glb:' }}
+                    <strong>{{ (parsedM.glbSizeMb ?? parsedM.sogModelSizeMb) ? (parsedM.glbSizeMb ?? parsedM.sogModelSizeMb) + ' MB' : '--' }}</strong>
+                  </span>
+                  <span>
+                    {{ parsedM.modelFormat === 'sog' ? (i18n.isRtl() ? 'نقاط:' : 'Splats:') : (i18n.isRtl() ? 'مثلثات:' : 'Tris:') }}
+                    <strong>{{ parsedM.triangles ? parsedM.triangles.toLocaleString() : '--' }}</strong>
+                  </span>
+                  <span>
+                    {{ i18n.isRtl() ? 'كاميرات:' : 'Cams:' }}
+                    <strong>{{ parsedM.camerasRegisteredPct !== undefined ? parsedM.camerasRegisteredPct + '%' : '--' }}</strong>
+                  </span>
+                </div>
+
+                @if (room.errorMessage) {
+                  <div class="room-error-note">⚠️ {{ room.errorMessage }}</div>
+                }
+              </article>
+            }
+          </div>
+        }
+      </section>
+
+      <!-- Right / Rail: Client Share Links + Collapsible Worker Tools -->
+      <aside class="rail-column">
+        <!-- Share Links Card -->
+        <section class="panel-card share-panel">
+          <div class="panel-head">
+            <div>
+              <h2>{{ i18n.isRtl() ? 'مشاركة الجولة للعملاء' : 'Client Share Links' }}</h2>
+              <p class="panel-sub">{{ i18n.isRtl() ? 'روابط عرض العقار ثلاثي الأبعاد عبر الموبايل أو الويب' : 'Public mobile & desktop 3D links' }}</p>
+            </div>
+            <button
+              type="button"
+              class="btn-atelier btn-sm btn-accent"
+              (click)="createNewShareLink()"
+              [disabled]="isCreatingShareLink() || statusStr !== 'Published'"
+              [title]="statusStr !== 'Published' ? (i18n.isRtl() ? 'انشر المسح أولاً لإنشاء رابط مشاركة' : 'Publish scan first') : ''"
+            >
+              {{ isCreatingShareLink() ? '...' : (i18n.isRtl() ? '+ رابط جديد' : '+ New Link') }}
+            </button>
+          </div>
+
+          @if (statusStr !== 'Published') {
+            <div class="share-hint-box">
+              {{ i18n.isRtl()
+                ? 'بعد اكتمال المعالجة وضبط الغرفة في الاستوديو، اضغط «نشر المسح للعملاء» لتفعيل روابط المشاركة.'
+                : 'Publish this scan after Studio review to enable public share links.' }}
+            </div>
+          }
+
+          @if (isLoadingShareLinks()) {
+            <div class="inner-empty">{{ i18n.isRtl() ? 'جاري التحميل...' : 'Loading...' }}</div>
+          } @else if (shareLinks().length === 0) {
+            <div class="inner-empty">{{ i18n.isRtl() ? 'لا توجد روابط مشاركة بعد.' : 'No share links yet.' }}</div>
+          } @else {
+            <div class="share-links-stack">
+              @for (link of shareLinks(); track link.id) {
+                <div class="share-link-item" [class.is-revoked]="!link.isActive">
+                  <div class="share-item-top">
+                    <span class="status-tag" [class.badge-success]="link.isActive" [class.badge-secondary]="!link.isActive">
+                      {{ link.isActive ? (i18n.isRtl() ? 'نشط' : 'Active') : (i18n.isRtl() ? 'ملغى' : 'Revoked') }}
+                    </span>
+                    <span class="views-pill mono">👁️ {{ link.viewCount }}</span>
+                  </div>
+
+                  <div class="share-url-preview mono">{{ getPublicShareUrl(link) }}</div>
+
+                  <div class="share-item-actions">
+                    <button
+                      type="button"
+                      class="btn-atelier btn-sm btn-surface"
+                      (click)="copyToClipboard(getPublicShareUrl(link), 'shareLink_' + link.id)"
+                    >
+                      {{ isCopied('shareLink_' + link.id) ? (i18n.isRtl() ? '✓ تم النسخ' : '✓ Copied') : (i18n.isRtl() ? 'نسخ الرابط' : 'Copy') }}
+                    </button>
+                    <a
+                      [href]="getPublicShareUrl(link)"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="btn-atelier btn-sm btn-outline-subtle"
+                    >
+                      {{ i18n.isRtl() ? 'فتح ↗' : 'Open ↗' }}
+                    </a>
+                    @if (link.isActive) {
+                      <button
+                        type="button"
+                        class="btn-atelier btn-sm btn-danger-subtle"
+                        (click)="revokeShareLink(link.id)"
+                        [disabled]="isRevokingId() === link.id"
+                      >
+                        {{ isRevokingId() === link.id ? '...' : (i18n.isRtl() ? 'إلغاء' : 'Revoke') }}
+                      </button>
+                    }
+                  </div>
+                </div>
+              }
+            </div>
+          }
+        </section>
+
+        <!-- Collapsible Worker & Maintenance Tools -->
+        <section class="panel-card tools-drawer">
+          <button type="button" class="drawer-toggle" (click)="showAdvancedTools.set(!showAdvancedTools())">
+            <span>⚙️ {{ i18n.isRtl() ? 'أدوات Colab والصيانة المتقدمة' : 'Colab Worker & Maintenance' }}</span>
+            <span class="mono">{{ showAdvancedTools() ? '−' : '+' }}</span>
+          </button>
+
+          @if (showAdvancedTools()) {
+            <div class="drawer-body">
+              @if (authService.isAdmin()) {
+                <button
+                  type="button"
+                  class="btn-atelier btn-surface w-full"
+                  (click)="generateKaggleDispatchToken()"
+                  [disabled]="isGeneratingToken()"
+                >
+                  <span>⚡</span>
+                  <span>{{ isGeneratingToken() ? (i18n.isRtl() ? 'جاري التوليد...' : 'Generating...') : (i18n.isRtl() ? 'توليد توكن يدوي لـ Colab' : 'Generate Manual Colab Token') }}</span>
+                </button>
+              }
+
+              <button
+                type="button"
+                class="btn-atelier btn-surface w-full"
+                [disabled]="scan()!.rawClipsExpired || isRetrying() || !hasFailedOrIncompleteRooms()"
+                (click)="retryFailedRooms()"
+              >
+                <span>🔁</span>
+                <span>{{ isRetrying() ? (i18n.isRtl() ? 'جاري الإعادة...' : 'Retrying...') : (i18n.isRtl() ? 'إعادة معالجة الغرف غير المكتملة' : 'Retry Incomplete Rooms') }}</span>
+              </button>
+
+              @if (statusStr !== 'Published') {
+                <button
+                  type="button"
+                  class="btn-atelier btn-danger-subtle w-full"
+                  [disabled]="isDeletingScan()"
+                  (click)="deleteCurrentScan()"
+                >
+                  <span>🗑️</span>
+                  <span>{{ isDeletingScan() ? (i18n.isRtl() ? 'جاري الحذف...' : 'Deleting...') : (i18n.isRtl() ? 'حذف هذه الجلسة التجريبية/الفارغة' : 'Delete This Scan Job') }}</span>
+                </button>
+              }
+            </div>
+          }
+        </section>
+      </aside>
+    </div>
+  } @else if (!scan() && !isLoadingScan()) {
+    <div class="atelier-empty-state">
+      <div class="empty-glyph">🏛️</div>
+      @if (selectedPropertyId()) {
+        <h2>{{ i18n.isRtl() ? 'لا توجد جلسات مسح لهذا العقار بعد' : 'No Scan Jobs Yet' }}</h2>
+        <p>{{ i18n.isRtl() ? 'ارفع فيديو الغرف الآن وسيتولى معالج Colab تحويله تلقائياً إلى جولة ثلاثية الأبعاد.' : 'Upload room clips now and the Colab worker will reconstruct the 3D tour automatically.' }}</p>
+        <button type="button" class="btn-atelier btn-accent" (click)="openCreateScanModal()">
+          <span>＋</span>
+          <span>{{ i18n.isRtl() ? 'رفع فيديو الغرف وإنشاء الجلسة' : 'Create Scan & Upload Videos' }}</span>
+        </button>
+      } @else {
+        <h2>{{ i18n.isRtl() ? 'اختر عقاراً للبدء' : 'Select a Property to Begin' }}</h2>
+        <p>{{ i18n.isRtl() ? 'اختر العقار من القائمة في الأعلى لمتابعة جلسات المسح أو رفع فيديو جديد.' : 'Select a property above to manage its scans or upload room videos.' }}</p>
+      }
+    </div>
+  }
+
+  <!-- Modal 1: Colab Dispatch Token -->
+  @if (showTokenModal() && dispatchTokenData()) {
+    <div class="atelier-modal-backdrop" (click)="showTokenModal.set(false)">
+      <div class="atelier-modal" (click)="$event.stopPropagation()">
+        <div class="modal-head">
+          <h3>{{ i18n.isRtl() ? 'بيانات Colab Meshroom Worker (تشغيل يدوي)' : 'Colab Meshroom Worker Credentials' }}</h3>
+          <button type="button" class="toast-dismiss" (click)="showTokenModal.set(false)">✕</button>
+        </div>
+        <div class="modal-content">
+          <div class="modal-note">
+            {{ i18n.isRtl()
+              ? 'ملاحظة: نوت بوك v4 الأوتوماتيكي يسحب الجلسات تلقائياً بدون هذه الخطوة. استخدم هذه البيانات فقط لو كنت تشغّل نوت بوك v3 يدوياً.'
+              : 'Note: Auto-polling Colab v4 claims scans automatically. Use these credentials only for manual v3 runs.' }}
+          </div>
+
+          <div class="code-panel">
+            <pre class="mono">{{ getPythonSnippet() }}</pre>
+            <button type="button" class="btn-atelier btn-sm btn-surface" (click)="copyToClipboard(getPythonSnippet(), 'pySnippet')">
+              {{ isCopied('pySnippet') ? '✓' : '📋' }} {{ i18n.isRtl() ? 'نسخ Cell 1' : 'Copy Cell 1' }}
+            </button>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <button type="button" class="btn-atelier btn-surface" (click)="showTokenModal.set(false)">
+            {{ i18n.isRtl() ? 'إغلاق' : 'Close' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- Modal 2: Create Scan & Upload Room Videos -->
+  @if (showCreateModal()) {
+    <div class="atelier-modal-backdrop" (click)="!isUploadingScan() && showCreateModal.set(false)">
+      <div class="atelier-modal" (click)="$event.stopPropagation()">
+        <div class="modal-head">
+          <h3>{{ i18n.isRtl() ? 'رفع فيديوهات الغرف وإنشاء جلسة مسح' : 'Upload Room Videos & Create Scan' }}</h3>
+          <button type="button" class="toast-dismiss" [disabled]="isUploadingScan()" (click)="showCreateModal.set(false)">✕</button>
+        </div>
+
+        <div class="modal-content">
+          <div class="modal-note">
+            {{ i18n.isRtl()
+              ? 'اختر فيديو MP4/MOV لكل غرفة. بعد اكتمال الرفع سيسحب معالج Colab الجلسة تلقائياً خلال 60 ثانية.'
+              : 'Attach MP4/MOV clips per room. Once uploaded, the Colab auto-worker claims the job within 60 seconds.' }}
+          </div>
+
+          <div class="field-stack">
+            <label>{{ i18n.isRtl() ? 'نمط التصوير' : 'Capture Mode' }}</label>
+            <select class="atelier-input" [(ngModel)]="newScanCaptureMode" [disabled]="isUploadingScan()">
+              <option [ngValue]="1">{{ i18n.isRtl() ? 'غرفة بغرفة (RoomByRoom) — الأفضل لـ Meshroom' : 'Room By Room (Recommended)' }}</option>
+              <option [ngValue]="0">{{ i18n.isRtl() ? 'جولة مستمرة (Walkthrough)' : 'Continuous Walkthrough' }}</option>
+            </select>
+          </div>
+
+          <div class="draft-rooms-stack">
+            @for (clip of draftClips(); track $index) {
+              <div class="draft-room-box">
+                <div class="draft-room-top">
+                  <strong>{{ i18n.isRtl() ? 'غرفة #' + ($index + 1) : 'Room #' + ($index + 1) }}</strong>
+                  @if (draftClips().length > 1 && !isUploadingScan()) {
+                    <button type="button" class="btn-atelier btn-sm btn-danger-subtle" (click)="removeDraftClip($index)">
+                      {{ i18n.isRtl() ? 'حذف' : 'Remove' }}
+                    </button>
+                  }
+                </div>
+                <div class="draft-room-inputs">
+                  <input
+                    type="text"
+                    class="atelier-input"
+                    [placeholder]="i18n.isRtl() ? 'اسم الغرفة (مثلاً: الصالة)' : 'Room Label'"
+                    [(ngModel)]="clip.roomLabel"
+                    [disabled]="isUploadingScan()"
+                  />
+                  <input
+                    type="text"
+                    class="atelier-input mono"
+                    [placeholder]="i18n.isRtl() ? 'المعرف (living_room)' : 'Slug (living_room)'"
+                    [(ngModel)]="clip.roomId"
+                    [disabled]="isUploadingScan()"
+                  />
+                </div>
+                <input
+                  type="file"
+                  accept="video/*,.mp4,.mov,.webm"
+                  class="atelier-input file-input"
+                  (change)="onDraftFileSelected($index, $event)"
+                  [disabled]="isUploadingScan()"
+                />
+                @if (clip.file) {
+                  <span class="file-meta mono">{{ clip.file.name }} — {{ (clip.file.size / (1024 * 1024)).toFixed(1) }} MB</span>
+                }
+              </div>
+            }
+          </div>
+
+          @if (!isUploadingScan()) {
+            <button type="button" class="btn-atelier btn-surface w-full" (click)="addDraftClip()">
+              ＋ {{ i18n.isRtl() ? 'إضافة غرفة أخرى' : 'Add Another Room' }}
+            </button>
+          }
+
+          @if (uploadStatusText()) {
+            <div class="upload-progress-note mono">{{ uploadStatusText() }}</div>
+          }
+        </div>
+
+        <div class="modal-foot">
+          <button type="button" class="btn-atelier btn-surface" [disabled]="isUploadingScan()" (click)="showCreateModal.set(false)">
+            {{ i18n.isRtl() ? 'إلغاء' : 'Cancel' }}
+          </button>
+          <button type="button" class="btn-atelier btn-accent" [disabled]="isUploadingScan() || !canSubmitNewScan()" (click)="submitCreateAndUploadScan()">
+            {{ isUploadingScan() ? (i18n.isRtl() ? 'جاري الرفع...' : 'Uploading...') : (i18n.isRtl() ? 'بدء الرفع وإنشاء الجلسة' : 'Create & Upload') }}
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+</div>

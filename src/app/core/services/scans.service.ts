@@ -35,6 +35,11 @@ export class ScansService {
     return this.http.get<ScanJobDto>(url);
   }
 
+  deleteScan(scanId: string): Observable<void> {
+    const url = `${API_CONFIG.baseUrl}${API_CONFIG.endpoints.scans.get(scanId)}`;
+    return this.http.delete<void>(url);
+  }
+
   getScanPreview(scanId: string): Observable<ScanPreviewDto> {
     const url = `${API_CONFIG.baseUrl}${API_CONFIG.endpoints.scans.preview(scanId)}`;
     return this.http.get<ScanPreviewDto>(url);

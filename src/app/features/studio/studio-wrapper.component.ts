@@ -332,16 +332,40 @@ export class StudioWrapperComponent implements OnInit, OnDestroy {
   }
 
   onCropBoxChange(): void {
+    const minX = Math.min(Number(this.cropMinX()), Number(this.cropMaxX()) - 0.2);
+    const maxX = Math.max(Number(this.cropMaxX()), minX + 0.2);
+    const minY = Math.min(Number(this.cropMinY()), Number(this.cropMaxY()) - 0.2);
+    const maxY = Math.max(Number(this.cropMaxY()), minY + 0.2);
+    const minZ = Math.min(Number(this.cropMinZ()), Number(this.cropMaxZ()) - 0.2);
+    const maxZ = Math.max(Number(this.cropMaxZ()), minZ + 0.2);
+
+    this.cropMinX.set(minX);
+    this.cropMaxX.set(maxX);
+    this.cropMinY.set(minY);
+    this.cropMaxY.set(maxY);
+    this.cropMinZ.set(minZ);
+    this.cropMaxZ.set(maxZ);
+
     const bounds: [number, number, number, number, number, number] = [
-      this.cropMinX(),
-      this.cropMaxX(),
-      this.cropMinY(),
-      this.cropMaxY(),
-      this.cropMinZ(),
-      this.cropMaxZ()
+      minX,
+      maxX,
+      minY,
+      maxY,
+      minZ,
+      maxZ
     ];
     this.sendToEditor('studio:setCropBox', { bounds });
     this.persistCurrentRoomToConfig();
+  }
+
+  resetCropBox(): void {
+    this.cropMinX.set(-15);
+    this.cropMaxX.set(15);
+    this.cropMinY.set(-5);
+    this.cropMaxY.set(8);
+    this.cropMinZ.set(-15);
+    this.cropMaxZ.set(15);
+    this.onCropBoxChange();
   }
 
   onFloorTiltChange(): void {
@@ -504,6 +528,17 @@ export class StudioWrapperComponent implements OnInit, OnDestroy {
 
       case 'studio:cropBoxChanged':
         if (data.bounds && Array.isArray(data.bounds) && data.bounds.length === 6) {
+          const current = [
+            this.cropMinX(),
+            this.cropMaxX(),
+            this.cropMinY(),
+            this.cropMaxY(),
+            this.cropMinZ(),
+            this.cropMaxZ()
+          ];
+          if (data.bounds.every((v: number, idx: number) => v === current[idx])) {
+            break;
+          }
           this.cropMinX.set(data.bounds[0]);
           this.cropMaxX.set(data.bounds[1]);
           this.cropMinY.set(data.bounds[2]);

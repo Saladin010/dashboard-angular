@@ -131,9 +131,11 @@
       <section class="sidebar-section">
         <div class="section-header-row">
           <h3 class="section-title">صندوق الاقتصاص 6-DOF (Crop Box)</h3>
-          <span class="badge badge-info">حدود الغرفة</span>
+          <button type="button" class="btn btn-outline btn-sm" (click)="resetCropBox()" title="إعادة فتح حدود الاقتصاص">
+            ↺ فتح الكل
+          </button>
         </div>
-        <p class="section-desc">حدد الحدود المكانية المحيطة بالنموذج لاستبعاد النقاط الزائدة:</p>
+        <p class="section-desc">حدّد الحدود المكانية للغرفة لإخفاء أي زوائد خارجية (يُطبّق القص مباشرة داخل المشهد وفي رابط المشاركة):</p>
 
         <div class="sliders-grid">
           <div class="slider-group">
