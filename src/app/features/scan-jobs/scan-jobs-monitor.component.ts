@@ -31,6 +31,12 @@ interface RoomParsedMetrics {
   ssim?: number;
 }
 
+interface DraftRoomClip {
+  roomId: string;
+  roomLabel: string;
+  file: File | null;
+}
+
 @Component({
   selector: 'app-scan-jobs-monitor',
   standalone: true,
@@ -49,6 +55,12 @@ interface RoomParsedMetrics {
         </div>
 
         <div class="header-actions">
+          @if (selectedPropertyId()) {
+            <button type="button" class="btn btn-primary" (click)="openCreateScanModal()">
+              <span class="btn-icon">➕</span>
+              <span>{{ i18n.isRtl() ? 'جلسة مسح جديدة ورفع فيديو' : 'New Scan & Upload Video' }}</span>
+            </button>
+          }
           @if (scan()) {
             <button type="button" class="btn btn-outline" (click)="refreshCurrentScan()" [disabled]="isLoadingScan()">
               <span class="btn-icon">🔄</span>
@@ -97,28 +109,44 @@ interface RoomParsedMetrics {
           <!-- Property Scans Dropdown -->
           <div class="form-group">
             <label>{{ i18n.isRtl() ? 'جلسات المسح لهذا العقار' : 'Property Scans' }}</label>
-            <select
-              class="input-control"
-              [ngModel]="scan()?.id || ''"
-              (ngModelChange)="loadScan($event)"
-              [disabled]="isLoadingScansList() || propertyScans().length === 0"
-            >
-              @if (propertyScans().length === 0) {
-                <option value="">{{ i18n.isRtl() ? 'لا توجد جلسات لهذا العقار' : 'No scans for this property' }}</option>
-              } @else {
-                <option value="">{{ i18n.isRtl() ? '-- اختر جلسة المسح --' : '-- Select Scan --' }}</option>
-                @for (sc of propertyScans(); track sc.id) {
-                  <option [value]="sc.id">
-                    {{ sc.id.substring(0, 8) }}... | {{ getScanStatusLabel(sc.status) }} | {{ getCaptureModeName(sc.captureMode) }} ({{ formatDate(sc.createdAt) }})
-                  </option>
+            <div class="search-input-wrap">
+              <select
+                class="input-control"
+                style="flex: 1"
+                [ngModel]="scan()?.id || ''"
+                (ngModelChange)="loadScan($event)"
+                [disabled]="isLoadingScansList() || propertyScans().length === 0"
+              >
+                @if (isLoadingScansList()) {
+                  <option value="">{{ i18n.isRtl() ? 'جاري تحميل جلسات العقار...' : 'Loading property scans...' }}</option>
+                } @else if (propertyScans().length === 0) {
+                  <option value="">{{ i18n.isRtl() ? 'لا توجد جلسات لهذا العقار بعد' : 'No scans for this property yet' }}</option>
+                } @else {
+                  <option value="">{{ i18n.isRtl() ? '-- اختر جلسة المسح --' : '-- Select Scan --' }}</option>
+                  @for (sc of propertyScans(); track sc.id) {
+                    <option [value]="sc.id">
+                      {{ sc.id.substring(0, 8) }}... | {{ getScanStatusLabel(sc.status) }} | {{ getCaptureModeName(sc.captureMode) }} ({{ formatDate(sc.createdAt) }})
+                    </option>
+                  }
                 }
+              </select>
+              @if (selectedPropertyId()) {
+                <button
+                  type="button"
+                  class="btn btn-outline"
+                  (click)="loadPropertyScans(selectedPropertyId())"
+                  [disabled]="isLoadingScansList()"
+                  [title]="i18n.isRtl() ? 'تحديث جلسات هذا العقار' : 'Reload property scans'"
+                >
+                  🔄
+                </button>
               }
-            </select>
+            </div>
           </div>
 
           <!-- Direct Scan ID Search -->
           <div class="form-group direct-search-group">
-            <label>{{ i18n.isRtl() ? 'أو أدخل معرف الجلسة مباشرة (Scan ID)' : 'Or Enter Direct Scan ID' }}</label>
+            <label>{{ i18n.isRtl() ? 'أو الصق معرف جلسة مباشر (Scan ID اختياري)' : 'Or Paste Direct Scan UUID (Optional)' }}</label>
             <div class="search-input-wrap">
               <input
                 type="text"
@@ -127,9 +155,9 @@ interface RoomParsedMetrics {
                 [(ngModel)]="searchScanIdInput"
                 (keyup.enter)="searchByDirectId()"
               />
-              <button type="button" class="btn btn-primary" (click)="searchByDirectId()" [disabled]="isLoadingScan() || !searchScanIdInput.trim()">
+              <button type="button" class="btn btn-secondary" (click)="searchByDirectId()" [disabled]="isLoadingScan() || !searchScanIdInput.trim()">
                 <span class="btn-icon">🔍</span>
-                <span>{{ i18n.isRtl() ? 'تحميل' : 'Load' }}</span>
+                <span>{{ i18n.isRtl() ? 'فتح بالمعرّف' : 'Load ID' }}</span>
               </button>
             </div>
           </div>
@@ -615,8 +643,114 @@ interface RoomParsedMetrics {
       } @else if (!scan() && !isLoadingScan()) {
         <div class="card empty-welcome-card">
           <div style="font-size: 2.5rem;">📸</div>
-          <h3>{{ i18n.isRtl() ? 'اختر عقاراً أو جلسة مسح لبدء المراقبة' : 'Select a property or scan to start monitoring' }}</h3>
-          <p>{{ i18n.isRtl() ? 'يمكنك اختيار أحد العقارات من القائمة المنسدلة أعلاه أو لصق معرف الجلسة (Scan ID) للتحقق الفوري من حالة المعالجة ونماذج .sog.' : 'Choose a property from the dropdown above or paste a Scan UUID to inspect processing status, room progress, and metrics.' }}</p>
+          @if (selectedPropertyId()) {
+            <h3>{{ i18n.isRtl() ? 'لا توجد جلسات مسح لهذا العقار حتى الآن' : 'No Scan Jobs Found for This Property Yet' }}</h3>
+            <p>{{ i18n.isRtl() ? 'ارفع فيديو الغرف مباشرة من المتصفح لإنشاء جلسة مسح وتوليد توكن تشغيل Google Colab T4 فوراً.' : 'Upload room video clips directly from your browser to start a scan job and mint a Google Colab T4 Worker token.' }}</p>
+            <button type="button" class="btn btn-primary" (click)="openCreateScanModal()">
+              <span class="btn-icon">➕</span>
+              <span>{{ i18n.isRtl() ? 'إنشاء جلسة مسح ورفع فيديو الغرف' : 'Create Scan & Upload Room Videos' }}</span>
+            </button>
+          } @else {
+            <h3>{{ i18n.isRtl() ? 'اختر عقاراً أو جلسة مسح لبدء المراقبة' : 'Select a property or scan to start monitoring' }}</h3>
+            <p>{{ i18n.isRtl() ? 'اختر عقاراً من القائمة أعلاه لعرض جلساته أو إنشاء جلسة مسح جديدة ورفع الفيديوهات، أو الصق معرف جلسة (Scan ID) مباشرة.' : 'Choose a property above to view or create scan jobs, or paste a Scan UUID directly.' }}</p>
+          }
+        </div>
+      }
+
+      <!-- Create Scan & Upload Room Videos Modal -->
+      @if (showCreateModal()) {
+        <div class="modal-backdrop" (click)="!isUploadingScan() && showCreateModal.set(false)">
+          <div class="modal-card" (click)="$event.stopPropagation()">
+            <div class="modal-header">
+              <div class="header-actions">
+                <span class="modal-badge">NEW SCAN</span>
+                <h3>{{ i18n.isRtl() ? 'إنشاء جلسة مسح ورفع فيديوهات الغرف' : 'Create Scan Job & Upload Videos' }}</h3>
+              </div>
+              <button type="button" class="toast-close" [disabled]="isUploadingScan()" (click)="showCreateModal.set(false)">✕</button>
+            </div>
+
+            <div class="modal-body">
+              <div class="info-alert">
+                <p>
+                  {{ i18n.isRtl()
+                    ? 'اختر مقاطع الفيديو لكل غرفة (MP4/MOV). سيتم تقسيمها ورفعها إلى Cloudflare R2 ثم تجهيز الجلسة لمعالج Colab Meshroom.'
+                    : 'Attach room video clips (MP4/MOV). Videos are uploaded to Cloudflare R2 via multipart presigned URLs and queued for Colab Meshroom.' }}
+                </p>
+              </div>
+
+              <div class="token-field-group">
+                <div class="field-label-row">
+                  <label>{{ i18n.isRtl() ? 'نمط التصوير (Capture Mode)' : 'Capture Mode' }}</label>
+                </div>
+                <select class="input-control" [(ngModel)]="newScanCaptureMode" [disabled]="isUploadingScan()">
+                  <option [ngValue]="1">{{ i18n.isRtl() ? 'غرفة بغرفة (RoomByRoom) — الأفضل لـ Meshroom' : 'Room By Room (Recommended for Meshroom)' }}</option>
+                  <option [ngValue]="0">{{ i18n.isRtl() ? 'جولة مستمرة (Walkthrough)' : 'Continuous Walkthrough' }}</option>
+                </select>
+              </div>
+
+              @for (clip of draftClips(); track $index) {
+                <div class="room-job-card" style="padding: .65rem; border: 1px solid var(--border-color); border-radius: .4rem; display: flex; flex-direction: column; gap: .4rem;">
+                  <div class="field-label-row">
+                    <strong>{{ i18n.isRtl() ? 'غرفة #' + ($index + 1) : 'Room #' + ($index + 1) }}</strong>
+                    @if (draftClips().length > 1 && !isUploadingScan()) {
+                      <button type="button" class="btn-danger-sm" (click)="removeDraftClip($index)">
+                        {{ i18n.isRtl() ? 'حذف' : 'Remove' }}
+                      </button>
+                    }
+                  </div>
+                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: .4rem;">
+                    <input
+                      type="text"
+                      class="input-control"
+                      [placeholder]="i18n.isRtl() ? 'اسم الغرفة (مثلاً: الصالة)' : 'Room Label (e.g. Living Room)'"
+                      [(ngModel)]="clip.roomLabel"
+                      [disabled]="isUploadingScan()"
+                    />
+                    <input
+                      type="text"
+                      class="input-control font-mono"
+                      [placeholder]="i18n.isRtl() ? 'معرف الغرفة (living_room)' : 'Room ID slug (living_room)'"
+                      [(ngModel)]="clip.roomId"
+                      [disabled]="isUploadingScan()"
+                    />
+                  </div>
+                  <input
+                    type="file"
+                    accept="video/*,.mp4,.mov,.webm"
+                    class="input-control"
+                    (change)="onDraftFileSelected($index, $event)"
+                    [disabled]="isUploadingScan()"
+                  />
+                  @if (clip.file) {
+                    <span class="progress-step-text font-mono">
+                      {{ clip.file.name }} ({{ (clip.file.size / (1024 * 1024)).toFixed(1) }} MB)
+                    </span>
+                  }
+                </div>
+              }
+
+              @if (!isUploadingScan()) {
+                <button type="button" class="btn btn-outline" (click)="addDraftClip()">
+                  + {{ i18n.isRtl() ? 'إضافة غرفة أخرى' : 'Add Another Room' }}
+                </button>
+              }
+
+              @if (uploadStatusText()) {
+                <div class="info-alert">
+                  <p>{{ uploadStatusText() }}</p>
+                </div>
+              }
+            </div>
+
+            <div class="modal-footer" style="gap: .5rem;">
+              <button type="button" class="btn btn-secondary" [disabled]="isUploadingScan()" (click)="showCreateModal.set(false)">
+                {{ i18n.isRtl() ? 'إلغاء' : 'Cancel' }}
+              </button>
+              <button type="button" class="btn btn-primary" [disabled]="isUploadingScan() || !canSubmitNewScan()" (click)="submitCreateAndUploadScan()">
+                {{ isUploadingScan() ? (i18n.isRtl() ? 'جاري الرفع...' : 'Uploading...') : (i18n.isRtl() ? 'بدء الرفع وإنشاء الجلسة' : 'Create & Upload Scan') }}
+              </button>
+            </div>
+          </div>
         </div>
       }
     </div>
@@ -721,6 +855,13 @@ export class ScanJobsMonitorComponent implements OnInit, OnDestroy {
 
   readonly copiedMap = signal<Record<string, boolean>>({});
   readonly colabHmacSecretPlaceholder = 'DefaultDevelopmentWebhookSecretKey1234567890!';
+  readonly showCreateModal = signal<boolean>(false);
+  readonly isUploadingScan = signal<boolean>(false);
+  readonly uploadStatusText = signal<string>('');
+  newScanCaptureMode = 1;
+  readonly draftClips = signal<DraftRoomClip[]>([
+    { roomId: 'living_room', roomLabel: 'الصالة الرئيسية', file: null }
+  ]);
   private autoRefreshTimer: ReturnType<typeof setInterval> | null = null;
 
   readonly aggregatedMetrics = computed(() => {
@@ -846,18 +987,25 @@ export class ScanJobsMonitorComponent implements OnInit, OnDestroy {
           this.loadPropertyScans(firstProp.id);
         }
       },
-      error: () => {
+      error: (err) => {
         this.isLoadingProperties.set(false);
+        this.actionMessage.set({
+          type: 'error',
+          text: extractApiErrorMessage(err, 'تعذر تحميل قائمة العقارات.')
+        });
       }
     });
   }
 
   onPropertyChange(propertyId: string): void {
     this.selectedPropertyId.set(propertyId);
+    this.scan.set(null);
+    this.searchScanIdInput = '';
+    this.shareLinks.set([]);
+    this.propertyScans.set([]);
+    this.actionMessage.set(null);
     if (propertyId) {
       this.loadPropertyScans(propertyId);
-    } else {
-      this.propertyScans.set([]);
     }
   }
 
@@ -870,14 +1018,127 @@ export class ScanJobsMonitorComponent implements OnInit, OnDestroy {
 
         if (autoSelectScanId) {
           this.loadScan(autoSelectScanId);
-        } else if (scans && scans.length > 0 && !this.scan()) {
+        } else if (scans && scans.length > 0) {
           this.loadScan(scans[0].id);
         }
       },
-      error: () => {
+      error: (err) => {
         this.isLoadingScansList.set(false);
+        this.actionMessage.set({
+          type: 'error',
+          text: extractApiErrorMessage(err, 'تعذر تحميل جلسات المسح لهذا العقار.')
+        });
       }
     });
+  }
+
+  openCreateScanModal(): void {
+    if (!this.selectedPropertyId()) return;
+    this.uploadStatusText.set('');
+    this.draftClips.set([{ roomId: 'living_room', roomLabel: 'الصالة الرئيسية', file: null }]);
+    this.showCreateModal.set(true);
+  }
+
+  addDraftClip(): void {
+    const idx = this.draftClips().length + 1;
+    this.draftClips.update((list) => [
+      ...list,
+      { roomId: `room_${idx}`, roomLabel: `غرفة ${idx}`, file: null }
+    ]);
+  }
+
+  removeDraftClip(index: number): void {
+    this.draftClips.update((list) => list.filter((_, i) => i !== index));
+  }
+
+  onDraftFileSelected(index: number, event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0] ?? null;
+    this.draftClips.update((list) =>
+      list.map((item, i) => (i === index ? { ...item, file } : item))
+    );
+  }
+
+  canSubmitNewScan(): boolean {
+    const clips = this.draftClips();
+    return clips.length > 0 && clips.every((c) => c.roomId.trim() && c.roomLabel.trim() && c.file && c.file.size > 0);
+  }
+
+  async submitCreateAndUploadScan(): Promise<void> {
+    const propertyId = this.selectedPropertyId();
+    if (!propertyId || !this.canSubmitNewScan()) return;
+
+    const clips = this.draftClips();
+    this.isUploadingScan.set(true);
+    this.uploadStatusText.set(this.i18n.isRtl() ? 'جاري إنشاء الجلسة وطلب روابط الرفع...' : 'Creating scan job...');
+
+    try {
+      const { firstValueFrom } = await import('rxjs');
+      const created = await firstValueFrom(
+        this.scansService.createScan(propertyId, {
+          captureMode: this.newScanCaptureMode,
+          enginePolicy: 0,
+          clips: clips.map((c, idx) => ({
+            roomId: c.roomId.trim(),
+            roomLabel: c.roomLabel.trim(),
+            sortOrder: idx,
+            fileSizeBytes: c.file!.size,
+            mimeType: c.file!.type || 'video/mp4'
+          }))
+        })
+      );
+
+      const completedRooms: { roomId: string; parts: { partNumber: number; eTag: string }[] }[] = [];
+
+      for (const roomUpload of created.clips) {
+        const draft = clips.find((c) => c.roomId.trim() === roomUpload.roomId);
+        if (!draft?.file) continue;
+
+        const file = draft.file;
+        const partSize = roomUpload.partSizeBytes || 15 * 1024 * 1024;
+        const uploadedParts: { partNumber: number; eTag: string }[] = [];
+
+        for (const part of roomUpload.parts) {
+          const start = (part.partNumber - 1) * partSize;
+          const end = Math.min(file.size, start + partSize);
+          const chunk = file.slice(start, end);
+
+          this.uploadStatusText.set(
+            this.i18n.isRtl()
+              ? `جاري رفع ${roomUpload.roomLabel} (الجزء ${part.partNumber} من ${roomUpload.parts.length})...`
+              : `Uploading ${roomUpload.roomLabel} (part ${part.partNumber}/${roomUpload.parts.length})...`
+          );
+
+          const putResp = await fetch(part.url, { method: 'PUT', body: chunk });
+          if (!putResp.ok) {
+            throw new Error(`R2 upload failed (${putResp.status})`);
+          }
+          const eTag = (putResp.headers.get('ETag') || putResp.headers.get('etag') || '').replace(/"/g, '');
+          if (!eTag) {
+            throw new Error('Missing ETag header from R2 response (ensure R2 CORS ExposeHeaders includes ETag).');
+          }
+          uploadedParts.push({ partNumber: part.partNumber, eTag });
+        }
+
+        completedRooms.push({ roomId: roomUpload.roomId, parts: uploadedParts });
+      }
+
+      this.uploadStatusText.set(this.i18n.isRtl() ? 'جاري تأكيد اكتمال الرفع...' : 'Finalizing multipart upload...');
+      await firstValueFrom(this.scansService.completeUpload(created.scanId, { rooms: completedRooms }));
+
+      this.isUploadingScan.set(false);
+      this.showCreateModal.set(false);
+      this.actionMessage.set({
+        type: 'success',
+        text: this.i18n.isRtl() ? 'تم إنشاء الجلسة ورفع الفيديوهات بنجاح!' : 'Scan job created and room videos uploaded!'
+      });
+      this.loadPropertyScans(propertyId, created.scanId);
+    } catch (err: any) {
+      this.isUploadingScan.set(false);
+      const msg = extractApiErrorMessage(err, err?.message || 'فشل رفع الفيديو إلى R2. تأكد من إعدادات CORS على Bucket my-app-media.');
+      this.uploadStatusText.set(msg);
+      this.actionMessage.set({ type: 'error', text: msg });
+    }
   }
 
   searchByDirectId(): void {

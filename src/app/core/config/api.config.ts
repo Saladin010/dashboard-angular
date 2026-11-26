@@ -26,6 +26,7 @@ export const API_CONFIG = {
     scans: {
       get: (scanId: string) => `/scans/${scanId}`,
       preview: (scanId: string) => `/scans/${scanId}/preview`,
+      uploadComplete: (scanId: string) => `/scans/${scanId}/upload-complete`,
       dispatchToken: (scanId: string) => `/scans/${scanId}/dispatch-token`,
       retry: (scanId: string) => `/scans/${scanId}/retry`,
       sceneConfig: (scanId: string) => `/scans/${scanId}/scene-config`,

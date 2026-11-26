@@ -173,3 +173,54 @@ export interface ScanPreviewDto {
   rooms: ScanPreviewRoomDto[];
   sceneConfig: SceneConfigurationDto;
 }
+
+export interface CreateScanClipDto {
+  roomId: string;
+  roomLabel: string;
+  sortOrder: number;
+  fileSizeBytes: number;
+  mimeType?: string;
+}
+
+export interface CreateScanRequestDto {
+  captureMode: number;
+  enginePolicy: number;
+  clips: CreateScanClipDto[];
+}
+
+export interface PresignedPartUrlDto {
+  partNumber: number;
+  url: string;
+}
+
+export interface CreateScanRoomUploadDto {
+  roomId: string;
+  roomLabel: string;
+  sortOrder: number;
+  rawR2Key: string;
+  uploadId: string;
+  partSizeBytes: number;
+  partCount: number;
+  parts: PresignedPartUrlDto[];
+}
+
+export interface CreateScanResponseDto {
+  scanId: string;
+  propertyId: string;
+  status: ScanJobStatus | number;
+  clips: CreateScanRoomUploadDto[];
+}
+
+export interface PartETagDto {
+  partNumber: number;
+  eTag: string;
+}
+
+export interface RoomUploadCompleteDto {
+  roomId: string;
+  parts: PartETagDto[];
+}
+
+export interface CompleteUploadRequestDto {
+  rooms: RoomUploadCompleteDto[];
+}

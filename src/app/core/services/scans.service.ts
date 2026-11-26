@@ -8,7 +8,10 @@ import {
   DispatchTokenResponse,
   UpdateSceneConfigRequest,
   SceneConfigurationDto,
-  PublishScanResultDto
+  PublishScanResultDto,
+  CreateScanRequestDto,
+  CreateScanResponseDto,
+  CompleteUploadRequestDto
 } from '../models/scan.model';
 
 @Injectable({
@@ -16,6 +19,16 @@ import {
 })
 export class ScansService {
   private readonly http = inject(HttpClient);
+
+  createScan(propertyId: string, req: CreateScanRequestDto): Observable<CreateScanResponseDto> {
+    const url = `${API_CONFIG.baseUrl}${API_CONFIG.endpoints.properties.scans(propertyId)}`;
+    return this.http.post<CreateScanResponseDto>(url, req);
+  }
+
+  completeUpload(scanId: string, req: CompleteUploadRequestDto): Observable<ScanJobDto> {
+    const url = `${API_CONFIG.baseUrl}${API_CONFIG.endpoints.scans.uploadComplete(scanId)}`;
+    return this.http.post<ScanJobDto>(url, req);
+  }
 
   getScan(scanId: string): Observable<ScanJobDto> {
     const url = `${API_CONFIG.baseUrl}${API_CONFIG.endpoints.scans.get(scanId)}`;
