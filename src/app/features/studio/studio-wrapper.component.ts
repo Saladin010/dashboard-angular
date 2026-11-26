@@ -135,6 +135,8 @@ export class StudioWrapperComponent implements OnInit, OnDestroy {
           this.propertiesService.getPropertyScans(prop.id).subscribe({
             next: (scans) => {
               for (const sc of scans || []) {
+                const st = String(sc.status ?? '').toLowerCase();
+                if (st === '6' || st === 'archived') continue;
                 list.push({ scanId: sc.id, propertyTitle: prop.title });
               }
               this.availableScans.set([...list]);

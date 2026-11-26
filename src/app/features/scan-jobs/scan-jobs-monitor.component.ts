@@ -271,14 +271,20 @@ export class ScanJobsMonitorComponent implements OnInit, OnDestroy {
     this.isLoadingScansList.set(true);
     this.propertiesService.getPropertyScans(propertyId).subscribe({
       next: (scans) => {
-        this.propertyScans.set(scans || []);
+        const activeScans = (scans || []).filter(
+          (s) => normalizeScanJobStatus(s.status) !== 'Archived'
+        );
+        this.propertyScans.set(activeScans);
         this.isLoadingScansList.set(false);
 
         if (autoSelectScanId) {
           this.loadScan(autoSelectScanId);
-        } else if (scans && scans.length > 0) {
-          const best = this.pickBestScan(scans);
+        } else if (activeScans.length > 0) {
+          const best = this.pickBestScan(activeScans);
           if (best) this.loadScan(best.id);
+        } else {
+          this.scan.set(null);
+          this.shareLinks.set([]);
         }
       },
       error: (err) => {
