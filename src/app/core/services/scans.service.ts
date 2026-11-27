@@ -11,7 +11,11 @@ import {
   PublishScanResultDto,
   CreateScanRequestDto,
   CreateScanResponseDto,
-  CompleteUploadRequestDto
+  CompleteUploadRequestDto,
+  PropertyAssemblyStudioDto,
+  PropertyAssemblyDto,
+  SavePropertyAssemblyRequest,
+  PublishPropertyAssemblyResultDto
 } from '../models/scan.model';
 
 @Injectable({
@@ -63,5 +67,20 @@ export class ScansService {
   publishScan(scanId: string): Observable<PublishScanResultDto> {
     const url = `${API_CONFIG.baseUrl}${API_CONFIG.endpoints.scans.publish(scanId)}`;
     return this.http.post<PublishScanResultDto>(url, {});
+  }
+
+  getPropertyAssemblyStudio(propertyId: string): Observable<PropertyAssemblyStudioDto> {
+    const url = `${API_CONFIG.baseUrl}${API_CONFIG.endpoints.properties.assembly(propertyId)}`;
+    return this.http.get<PropertyAssemblyStudioDto>(url);
+  }
+
+  savePropertyAssembly(propertyId: string, req: SavePropertyAssemblyRequest): Observable<PropertyAssemblyDto> {
+    const url = `${API_CONFIG.baseUrl}${API_CONFIG.endpoints.properties.assembly(propertyId)}`;
+    return this.http.put<PropertyAssemblyDto>(url, req);
+  }
+
+  publishPropertyAssembly(propertyId: string): Observable<PublishPropertyAssemblyResultDto> {
+    const url = `${API_CONFIG.baseUrl}${API_CONFIG.endpoints.properties.publishAssembly(propertyId)}`;
+    return this.http.post<PublishPropertyAssemblyResultDto>(url, {});
   }
 }

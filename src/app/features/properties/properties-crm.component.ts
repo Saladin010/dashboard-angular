@@ -13,7 +13,7 @@ import {
   CreatePropertyRequestDto,
   ShareLinkDto
 } from '../../core/models/property.model';
-import { ScanJobDto, normalizeScanJobStatus } from '../../core/models/scan.model';
+import { ScanJobDto, normalizeScanJobStatus, normalizeScanRoomStatus } from '../../core/models/scan.model';
 
 @Component({
   selector: 'app-properties-crm',
@@ -280,10 +280,16 @@ import { ScanJobDto, normalizeScanJobStatus } from '../../core/models/scan.model
                       </p>
                     </div>
                     <div class="tour-btns">
-                      @if (latestScan()) {
+                      @if (hasGlbRooms()) {
+                        <a [routerLink]="['/studio/property', selectedProperty()!.id]" class="btn btn-outline btn-sm">
+                          الاستوديو 3D
+                        </a>
+                      } @else if (latestScan()) {
                         <a [routerLink]="['/studio', latestScan()!.id]" class="btn btn-outline btn-sm">
                           الاستوديو 3D
                         </a>
+                      }
+                      @if (latestScan()) {
                         <a [routerLink]="['/scans']" [queryParams]="{ propertyId: selectedProperty()!.id, scanId: latestScan()!.id }" class="btn btn-outline btn-sm">
                           مراقبة المسح
                         </a>
@@ -642,6 +648,7 @@ export class PropertiesCrmComponent implements OnInit {
   readonly selectedProperty = signal<PropertyDto | null>(null);
   readonly detailedProperty = signal<PropertyInternalDto | null>(null);
   readonly latestScan = signal<ScanJobDto | null>(null);
+  readonly hasGlbRooms = signal<boolean>(false);
   readonly isDetailLoading = signal(false);
 
   readonly showFormModal = signal(false);
@@ -730,6 +737,7 @@ export class PropertiesCrmComponent implements OnInit {
     this.selectedProperty.set(prop);
     this.detailedProperty.set(null);
     this.latestScan.set(null);
+    this.hasGlbRooms.set(false);
     this.isDetailLoading.set(true);
 
     this.propertiesService.getPropertyById(prop.id).subscribe({
@@ -747,6 +755,16 @@ export class PropertiesCrmComponent implements OnInit {
         if (scans && scans.length > 0) {
           const published = scans.find((s) => normalizeScanJobStatus(s.status) === 'Published');
           this.latestScan.set(published || scans[0]);
+          const hasGlb = scans.some(
+            (s) =>
+              normalizeScanJobStatus(s.status) !== 'Archived' &&
+              (s.rooms || []).some(
+                (r) =>
+                  normalizeScanRoomStatus(r.status) === 'Completed' &&
+                  (r.outputR2Key || '').toLowerCase().endsWith('.glb')
+              )
+          );
+          this.hasGlbRooms.set(hasGlb);
         }
       },
       error: () => {}
@@ -757,6 +775,7 @@ export class PropertiesCrmComponent implements OnInit {
     this.selectedProperty.set(null);
     this.detailedProperty.set(null);
     this.latestScan.set(null);
+    this.hasGlbRooms.set(false);
   }
 
   openCreateModal(): void {

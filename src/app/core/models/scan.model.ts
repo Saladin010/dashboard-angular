@@ -224,3 +224,112 @@ export interface RoomUploadCompleteDto {
 export interface CompleteUploadRequestDto {
   rooms: RoomUploadCompleteDto[];
 }
+
+export interface RoomTransformDto {
+  position: [number, number, number];
+  rotationEulerDeg: [number, number, number];
+  scale: number;
+}
+
+export interface RoomSpawnPoseDto {
+  position: [number, number, number];
+  target: [number, number, number];
+  fov: number;
+}
+
+export interface AssemblyHotspotDto {
+  id: string;
+  label: string;
+  position: [number, number, number];
+  targetInstanceId: string;
+  targetPose?: RoomSpawnPoseDto | null;
+}
+
+export type CropBoxBoundsTuple = [number, number, number, number, number, number];
+
+export interface AssembledRoomDto {
+  instanceId: string;
+  sourceScanId: string;
+  roomId: string;
+  displayLabel: string;
+  sortOrder: number;
+  signedModelUrl?: string | null;
+  gaussianCount?: number | null;
+  transform: RoomTransformDto;
+  cropBounds?: CropBoxBoundsTuple | number[] | null;
+  spawnPose?: RoomSpawnPoseDto | null;
+  hotspots?: AssemblyHotspotDto[] | null;
+  visible: boolean;
+}
+
+export interface PropertyAssemblyDto {
+  propertyId: string;
+  status: 'Draft' | 'Published' | string;
+  version: number;
+  defaultInstanceId?: string | null;
+  eyeHeightMeters: number;
+  rooms: AssembledRoomDto[];
+  publishedAt?: string | null;
+  updatedAt?: string | null;
+  updatedBy?: string | null;
+}
+
+export interface PropertyStudioSessionRoomDto {
+  scanJobId: string;
+  roomId: string;
+  roomLabel: string;
+  sortOrder: number;
+  status: string;
+  outputR2Key?: string | null;
+  signedModelUrl?: string | null;
+  gaussianCount?: number | null;
+  outputSizeBytes?: number | null;
+  isGlb: boolean;
+  isSelectable: boolean;
+}
+
+export interface PropertyStudioSessionDto {
+  scanJobId: string;
+  captureMode: string;
+  status: string;
+  createdAt: string;
+  completedGlbRoomsCount: number;
+  rooms: PropertyStudioSessionRoomDto[];
+}
+
+export interface PropertyAssemblyStudioDto {
+  propertyId: string;
+  propertyTitle: string;
+  district: string;
+  city: string;
+  assembly: PropertyAssemblyDto;
+  sessions: PropertyStudioSessionDto[];
+}
+
+export interface SavePropertyAssemblyRoomRequest {
+  instanceId: string;
+  sourceScanId: string;
+  roomId: string;
+  displayLabel: string;
+  sortOrder: number;
+  transform: RoomTransformDto;
+  cropBounds?: CropBoxBoundsTuple | number[] | null;
+  spawnPose?: RoomSpawnPoseDto | null;
+  hotspots: AssemblyHotspotDto[];
+  visible: boolean;
+}
+
+export interface SavePropertyAssemblyRequest {
+  expectedVersion: number;
+  defaultInstanceId?: string | null;
+  eyeHeightMeters: number;
+  rooms: SavePropertyAssemblyRoomRequest[];
+}
+
+export interface PublishPropertyAssemblyResultDto {
+  propertyId: string;
+  assemblyStatus: string;
+  propertyStatus: string;
+  version: number;
+  publishedAt: string;
+}

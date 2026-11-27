@@ -4,6 +4,7 @@ import { LayoutComponent } from './layout/layout.component';
 import { DashboardHomeComponent } from './features/dashboard/dashboard-home.component';
 import { authGuard } from './core/guards/auth.guard';
 import { roleGuard } from './core/guards/role.guard';
+import type { StudioWrapperComponent } from './features/studio/studio-wrapper.component';
 
 export const routes: Routes = [
   {
@@ -43,8 +44,14 @@ export const routes: Routes = [
         loadComponent: () => import('./features/scan-jobs/scan-jobs-monitor.component').then(m => m.ScanJobsMonitorComponent)
       },
       {
+        path: 'studio/property/:propertyId',
+        loadComponent: () => import('./features/studio/studio-wrapper.component').then(m => m.StudioWrapperComponent),
+        canDeactivate: [(component: StudioWrapperComponent) => component.canDeactivate()]
+      },
+      {
         path: 'studio/:scanId',
-        loadComponent: () => import('./features/studio/studio-wrapper.component').then(m => m.StudioWrapperComponent)
+        loadComponent: () => import('./features/studio/studio-wrapper.component').then(m => m.StudioWrapperComponent),
+        canDeactivate: [(component: StudioWrapperComponent) => component.canDeactivate()]
       },
       {
         path: 'studio',
